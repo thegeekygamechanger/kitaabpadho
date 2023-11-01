@@ -8,12 +8,12 @@
 body {
     font-family: Arial, sans-serif;
     background-color: #f4f4f4;
-    color: #333;
+    color: #333333;
 }
 
 header {
-    background-color: #333;
-    color: #fff;
+    background-color: #90EE90;
+    color: #1a1717;
     padding: 10px 0;
     text-align: center;
 }
@@ -44,20 +44,20 @@ main {
     margin-bottom: 10px;
     padding: 10px;
     border-radius: 5px;
-    border: 1px solid #ddd;
+    border: 1px solid #0e0c0c;
 }
 
 #query-form button {
     padding: 10px 20px;
-    background-color: #333;
-    color: #fff;
+    background-color: #90EE90;
+    color: #1c1616;
     border: none;
     border-radius: 5px;
     cursor: pointer;
 }
 
 #query-form button:hover {
-    background-color: #444;
+    background-color: #e2c3c3;
 }
 
 #suggestions-container {
