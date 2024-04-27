@@ -4,7 +4,7 @@
                         <div class="art-Footer-text">
                             <p><a href="contact.php">Contact Us</a> | <a href="terms.php">Terms of Use</a>
                                 | <a href="prvs.php">Privacy Statement</a> | <a href="isuser.php">Online User</a><br />
-                                Copyright &copy; 2017 BROUGHT TO YOU BY <a href="https://code-projects.org/"><b>Code-Projects</b></p>
+                                Team project <a href=""><b>EduSwap</b></p>
                         </div>
                     </div>
                     <div class="art-Footer-background"></div>

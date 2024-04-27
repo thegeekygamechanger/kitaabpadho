@@ -31,14 +31,14 @@
 {
 	display:block;
 	height:30px;
-	background-color:#999999;
+	background-color:#f8f8f8;
 	font-weight:bold;
 	line-height:30px;
 }
 
 .box2{
 	width: auto;
-	background-color:#CCC;
+	background-color:#f5efef;
 	display:block;
 }
 

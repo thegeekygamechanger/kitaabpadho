@@ -5,7 +5,7 @@ ob_start();
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
 <meta http-equiv="Content-Type" content="text/html" charset="utf-8" />
-<title>Online Discussion Forum</title>
+<title>Community</title>
 
 <script type="text/javascript" src="script.js"></script>
 
@@ -37,8 +37,8 @@ ob_start();
                 <div class="art-Header">
                     <div class="art-Header-jpg"></div>
                     <div class="art-Logo">
-                        <h1 id="name-text" class="art-Logo-name"><a href="https://code-projects.org/">Discussion Forum</a></h1>
-                        <div id="slogan-text" class="art-Logo-text"><b>Brought To You By Code-Projects</b></div>
+                        <h1 id="name-text" class="art-Logo-name"><a href="">EduSwap Community</a></h1>
+                        <div id="slogan-text" class="art-Logo-text"><b>Ask your Creativity !</b></div>
                     </div>
                 </div>
                 <div class="art-nav">
@@ -52,7 +52,7 @@ ob_start();
 
                 		<li><a href="forum.php" id="aforum"><span class="l" ></span><span class="r"></span><span class="t">Forum</span></a>
 
-                		<li><a href="contact.php" id="acontact"><span class="l"></span><span class="r"></span><span class="t">Contact</span></a></li>
+                		<!--<li><a href="contact.php" id="acontact"><span class="l"></span><span class="r"></span><span class="t">Contact</span></a></li>-->
 
 
 <li><a href="messages.php" id="amessage"><span class="l"></span><span class="r"></span><span class="t">Message</span></a></li>
