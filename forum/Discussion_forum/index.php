@@ -27,15 +27,35 @@
                             <div class="art-PostContent">
 
 
-<p align="justify"><b>THIS PROJECT IS BROUGHT TO YOU BY CODE-PROJECTS. FOR MORE PROJECTS, LOG ON TO www.code-projects.org. The Technical Discussion Forum(TDS)</b> is a discussion forum that gives information about various programming languages, general knowledge related questions, information related to Asp.net,Vb.net,Php,Os related questions ,etc. </p>
+<p align="justify"><b>**Mission Statement:**  Eduswap aims to empower students by providing access to
+educational resources, instruments, and knowledge without requiring them to physically go anywhere.
+The platform seeks to bridge the gap between students who have completed their education and those
+who are still pursuing higher education.  <br>**Key Features:** <br> 1. **Education Without Borders**:
+Eduswap enables students to acquire knowledge and skills without leaving their hometown or city.<br> 2.
+**Practical Sessions and Knowledge Videos**: Students can access practical sessions, knowledge
+videos, and instrument usage tutorials based on their purchase of courses and recommendations. <br>3.
+**Connections with Coaching Classes, Schools, and Colleges**: The platform facilitates connections
+between coaching classes, schools, and colleges nearby or far, eliminating the need for manual
+searching. <br> **Rural Area Focus:** <br>For students in rural areas, Eduswap aims to become a helping hand
+by donating, renting, or selling used educational materials on KitabPadhoIndia.com. This initiative
+encourages reuse and recycling of books and equipment, reducing pollution and deforestation.
+<br>**Improvement Sharing:** Eduswap will share the improvement stories before and after students'
+experiences with the platform, inspiring others to become helping hands as well. <br> **Problem
+Statement and Elaboration:** <br> 1. **No Active and Un-Interactive Portals**: Existing portals lack
+interactivity, making it difficult for students to find relevant resources. <br>2. **Time-Consuming
+Service**: Students face challenges in finding educational materials due to the time-consuming
+process of searching manually. <br>3. **Lack of Facilities**: Many students lack access to facilities
+like engineering, medical, or law degree colleges, hindering their academic progress.<br> 4. **No
+Appropriate Details**: Existing portals often lack detailed information about available resources,
+making it difficult for students to find what they need.  <br>**Existing Facilitators:** Eduswap aims to
+address the following existing facilitators:  <br>1. No active and un-interactive portals <br>2. Time-
+consuming service <br>3. Lacks of facilities <br>4. No appropriate details  By providing a comprehensive
+platform, Eduswap seeks to revolutionize the way students access educational resources, making it
+easier for them to learn and grow.</p>
 
-<p align="justify">This forum is useful for the beginners to get information  related to  various topics. There is a centralized database in which all the information is managed. The administrator acts as the highest authority and has the rights to update the database. There are also connected user who acts as an intermediate user who can also answer the questions of the end-user if they know it. The intermediate user can also cache the information provided by the administrator to the end-user. This cached information is useful when the same question is repeated some another user , then the intermediate user can get the information from cache memory and reply to the end-user. This reduces the response time.</p>
 
-<p align="justify">Whenever a question is asked by the end-user to get information ,it is received by the administrator who fetches the information from the database and reply to the end-user. Whenever the new information is arrived it is updated by the end-user. The end-user is provided with the access rights which is  managed by the administrator. The access to the database is provided to the end-user according to these rights only.</p>
-
-                                <p align="justify">The technological discussion form gives specific information to the programmers about programming languages.It is also helpful for the beginners to gain information about programming languages from the same site only.It is very useful site for the beginners to gain information as well as learn new programming languages very easily.The goal of this site is to provide information about the technical related questions and language related questions to the end user.</p>
-<p align="justify">When the user asks the answer of the questions is replied by either the administrator or the admin-connected user.When the administrator replies to the questions the admin-connected user will cache them in the memory.This will  helpful when the user again ask about the same questions the admin-connected will the  reply the answer of the question directly from the cache-memory
-</p>
+<!--<p align="justify">When the user asks the answer of the questions is replied by either the administrator or the admin-connected user.When the administrator replies to the questions the admin-connected user will cache them in the memory.This will  helpful when the user again ask about the same questions the admin-connected will the  reply the answer of the question directly from the cache-memory
+</p>!-->
                                 <p>
                                 	<span class="art-button-wrapper">
                                 		<span class="l"> </span>

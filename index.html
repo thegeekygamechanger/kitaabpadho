@@ -57,24 +57,53 @@
                 <div class="collapse navbar-collapse" id="navbarCollapse">
                     <div class="navbar-nav ms-auto">
                         <a href="index.html" class="nav-item nav-link active">Home</a>
-                        <a href="about.html" class="nav-item nav-link">About</a>
-                        <div class="nav-item dropdown">
-                            <a href="#" class="nav-link dropdown-toggle" data-bs-toggle="dropdown">Buy/Rentals</a>
+                        <a href="forum/Discussion_forum/index.php" class="nav-item nav-link">Community</a>
+                       <!-- <a href="about.html" class="nav-item nav-link">About</a>-->
+
+
+                       
+                       <!--- <div class="nav-item dropdown">
+                            <a href="#" class="nav-link dropdown-toggle" data-bs-toggle="dropdown">Services</a>
                             <div class="dropdown-menu rounded-0 m-0">
                                 <a href="sell/index.php" class="dropdown-item">Buy</a>
                                 <a href="rent/library/index.php" class="dropdown-item">Rental</a>
-                                <!--<a href="property-agent.html" class="dropdown-item">Contact Person</a>-->
+                                <a href="property-agent.html" class="dropdown-item">Contact Person</a>
                             </div>
+                        </div>-->
+                        <div class="nav-item">
+                            <a href="#" class="nav-link" onclick="scrollToServices()">Services</a>
                         </div>
-                        <div class="nav-item dropdown">
-                            <a href="#" class="nav-link dropdown-toggle" data-bs-toggle="dropdown">Community</a>
+                        
+                        <!-- Your other navigation items here -->
+                        
+                        <!-- Your services section -->
+                        <section id="services">
+                            <!-- Content of the services section -->
+                        </section>
+                        
+                        <script>
+                            function scrollToServices() {
+                                var servicesSection = document.getElementById('services');
+                                if (servicesSection) {
+                                    servicesSection.scrollIntoView({ behavior: 'smooth' });
+                                }
+                            }
+                        </script>
+                        
+
+
+
+
+                        <a href="http://localhost:8502/#kaam-ka-bot" class="nav-item nav-link">Ask AI</a>
+                       <!-- <div class="nav-item dropdown">
+                           <a href="http://localhost:8502/#kaam-ka-bot" class="nav-item nav-link" data-bs-toggle="dropdown">Ask AI</a>
                             <div class="dropdown-menu rounded-0 m-0">
                                 <a href="dis.html" class="dropdown-item">In Your Area</a>
-                            </div>-->
-                        </div>
+                            </div>
+                        </div>-->
                         <a href="contact.html" class="nav-item nav-link">Contact</a>
                     </div>
-                    <a href="" class="btn btn-primary px-3 d-none d-lg-flex">Add Yourself</a>
+                    <a href="manage/library/add/add-book.php" class="btn btn-primary px-3 d-none d-lg-flex">Add Yourself</a>
                 </div>
             </nav>
         </div>
@@ -112,9 +141,9 @@
                 <div class="row g-2">
                     <div class="col-md-10">
                         <div class="row g-2">
-                            <div class="col-md-4">
+                            <!--<div class="col-md-4">
                                 <input type="text" class="form-control border-0 py-3" placeholder="Find Stationery">
-                            </div>
+                            </div>-->
                        <!-- Navbar End <div class="col-md-4">
                                 <select class="form-select border-0 py-3">
                                     <option selected>Stationery Type</option>
@@ -122,18 +151,37 @@
                                     <option value="2">Instruments</option>
                                     <option value="3">Helping-hands</option>
                                 </select>
-                            </div>
-                            <div class="col-md-4">
-                                <select class="form-select border-0 py-3">
-                                    <option selected>Location</option>
-                                    <option value="1">Loni Kalbhor</option>
-                                    <option value="2">Hadapsar</option>
-                                    <option value="3">Camp</option>
-                                </select>
-                            </div>
+                            </div>-->
+                                <center><div style="padding-top: 10px;">
+                                    <h5>Select Rent/Buy Geographic location</h5>
+                                    <div class="col-md-4">
+                                        <select class="form-select border-0 py-3" onchange="redirectToPage(this)">
+                                            <option selected disabled>Rental</option>
+                                            <option value="rent_hd\library\index.php">Loni Kalbhor</option>
+                                            <option value="rent_hd p\library\index.php">Hadapsar</option>
+                                            <option value="rent_cm\library\index.php">Camp</option>
+                                        </select>
+                                    </div>
+                                </div></center>
+                            
+                            <script>
+                                function redirectToPage(selectElement) {
+                                    var selectedValue = selectElement.value;
+                                    if (selectedValue) {
+                                        window.location.href = selectedValue;
+                                    }
+                                }
+                            </script>
+                                          <center><div class="col-md-4">
+                                            <select class="form-select border-0 py-3" onchange="redirectToPage(this)">
+                                                <option selected disabled>Buy</option>
+                                            <option value="rent_hd\library\index.php">Loni Kalbhor</option>
+                                            <option value="hadapsar.php">Hadapsar</option>
+                                            <option value="camp.php">Camp</option>
+                                            </select>
+                                        </div>    </center>          
                        
-                 
-                    <div class="col-md-2">
+                   <!-- <div class="col-md-2">
                         <button class="btn btn-dark border-0 w-100 py-3">Search</button>
                     </div>--> 
                 </div>
@@ -282,7 +330,7 @@
 
 
         <!-- Property List Start -->
-        <div class="container-xxl py-5">
+    <!--<div class="container-xxl py-5">
             <div class="container">
                 <div class="row g-0 gx-5 align-items-end">
                     <div class="col-lg-6">
@@ -370,7 +418,7 @@
                     </div>
                 </div>
             </div>
-        </div>
+        </div>-->
         <!-- Property List End -->
 
 
