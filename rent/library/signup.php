@@ -111,7 +111,7 @@ error:function (){}
                         <div class="panel-body">
                             <form name="signup" method="post" onSubmit="return valid();">
 <div class="form-group">
-<label>Enter Full Name</label>
+<label>Enter Name</label>
 <input class="form-control" type="text" name="fullanme" autocomplete="off" required />
 </div>
 
