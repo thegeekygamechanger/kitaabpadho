@@ -50,7 +50,7 @@ echo "<script>alert('Something went wrong. Please try again');</script>";
     <!--[if IE]>
         <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
         <![endif]-->
-    <title>Online Library Management System | Student Signup</title>
+    <title>EduSwap SignUp</title>
     <!-- BOOTSTRAP CORE STYLE  -->
     <link href="assets/css/bootstrap.css" rel="stylesheet" />
     <!-- FONT AWESOME STYLE  -->
@@ -106,12 +106,12 @@ error:function (){}
 <div class="col-md-9 col-md-offset-1">
                <div class="panel panel-danger">
                         <div class="panel-heading">
-                           SINGUP FORM
+                           SignUp Form
                         </div>
                         <div class="panel-body">
                             <form name="signup" method="post" onSubmit="return valid();">
 <div class="form-group">
-<label>Enter Name</label>
+<label>Enter Fullname </label>
 <input class="form-control" type="text" name="fullanme" autocomplete="off" required />
 </div>
 
@@ -123,7 +123,7 @@ error:function (){}
                                         
 <div class="form-group">
 <label>Enter Email</label>
-<input class="form-control" type="ema il" name="email" id="emailid" onBlur="checkAvailability()"  autocomplete="off" required  />
+<input class="form-control" type="email" name="email" id="emailid" onBlur="checkAvailability()"  autocomplete="off" required  />
    <span id="user-availability-status" style="font-size:12px;"></span> 
 </div>
 

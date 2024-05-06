@@ -56,6 +56,8 @@ echo "<script>alert('Invalid Details');</script>";
     <!-- GOOGLE FONT -->
     <link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css' />
 
+    
+
 </head>
 <body>
     <!------MENU SECTION START-->
