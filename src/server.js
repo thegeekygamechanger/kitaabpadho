@@ -11,6 +11,7 @@ const { runDbBootstrap } = require('./bootstrap');
 const { uploadMedia, r2Enabled } = require('./storage');
 const { askPadhAI } = require('./ai');
 const { createRepository } = require('./repository');
+const { generateTotpSecret, verifyTotpCode, createOtpAuthUrl } = require('./totp');
 const {
   hashPassword,
   verifyPassword,
@@ -24,10 +25,17 @@ const {
   listingQuerySchema,
   authRegisterSchema,
   authLoginSchema,
+  profileUpdateSchema,
+  changePasswordSchema,
+  totpEnableSchema,
   communityPostSchema,
   communityCommentSchema,
   communityListQuerySchema,
+  notificationsQuerySchema,
   adminActionQuerySchema,
+  adminUsersQuerySchema,
+  adminResetUserPasswordSchema,
+  adminChangePasswordSchema,
   aiSchema
 } = require('./validators');
 
@@ -55,6 +63,17 @@ function toSerializableObject(value) {
   } catch {
     return {};
   }
+}
+
+function toPublicUser(user) {
+  if (!user) return null;
+  return {
+    id: user.id,
+    email: user.email,
+    fullName: user.fullName,
+    role: user.role,
+    totpEnabled: Boolean(user.totpEnabled)
+  };
 }
 
 function createApp(deps = {}) {
@@ -147,12 +166,22 @@ function createApp(deps = {}) {
       const existing = await repository.findUserByEmail(body.email);
       if (existing) return res.status(409).json({ error: 'Email already registered' });
 
+      const wantsTotpOnSignup = Boolean(body.totpSecret && body.totpCode);
+      if (wantsTotpOnSignup) {
+        const validTotp = verifyTotpCode(body.totpSecret, body.totpCode);
+        if (!validTotp) return res.status(400).json({ error: 'Invalid TOTP secret/code pair' });
+      }
+
       const passwordHash = await hashPassword(body.password);
-      const user = await repository.createUser({
+      let user = await repository.createUser({
         email: body.email,
         fullName: body.fullName,
         passwordHash
       });
+      if (wantsTotpOnSignup && typeof repository.enableTotp === 'function') {
+        const updated = await repository.enableTotp({ userId: user.id, secret: body.totpSecret });
+        if (updated) user = updated;
+      }
 
       const token = createSessionToken(user, appConfig.sessionSecret, appConfig.sessionTtlSeconds);
       res.cookie(appConfig.sessionCookieName, token, cookieOptions);
@@ -164,7 +193,7 @@ function createApp(deps = {}) {
         summary: 'New user account registered',
         details: { email: user.email }
       });
-      return res.status(201).json({ authenticated: true, user });
+      return res.status(201).json({ authenticated: true, user: toPublicUser(user) });
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid input' });
       return res.status(500).json({ error: error.message });
@@ -177,8 +206,21 @@ function createApp(deps = {}) {
       const user = await repository.findUserByEmail(body.email);
       if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
-      const valid = await verifyPassword(body.password, user.passwordHash);
-      if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+      const passwordProvided = typeof body.password === 'string' && body.password.length > 0;
+      const totpProvided = typeof body.totpCode === 'string' && body.totpCode.length > 0;
+
+      let passwordValid = false;
+      let totpValid = false;
+
+      if (passwordProvided) {
+        passwordValid = await verifyPassword(body.password, user.passwordHash);
+      }
+
+      if (totpProvided && user.totpEnabled && user.totpSecret) {
+        totpValid = verifyTotpCode(user.totpSecret, body.totpCode);
+      }
+
+      if (!passwordValid && !totpValid) return res.status(401).json({ error: 'Invalid credentials' });
 
       const token = createSessionToken(user, appConfig.sessionSecret, appConfig.sessionTtlSeconds);
       res.cookie(appConfig.sessionCookieName, token, cookieOptions);
@@ -188,11 +230,11 @@ function createApp(deps = {}) {
         entityType: 'user',
         entityId: user.id,
         summary: 'User logged in',
-        details: { email: user.email }
+        details: { email: user.email, authMethod: passwordValid ? 'password' : 'totp' }
       });
       return res.json({
         authenticated: true,
-        user: { id: user.id, email: user.email, fullName: user.fullName, role: user.role }
+        user: toPublicUser(user)
       });
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid input' });
@@ -221,7 +263,247 @@ function createApp(deps = {}) {
         res.clearCookie(appConfig.sessionCookieName, clearCookieOptions);
         return res.json({ authenticated: false, user: null });
       }
-      return res.json({ authenticated: true, user });
+      return res.json({ authenticated: true, user: toPublicUser(user) });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch('/api/profile', requireAuth, async (req, res) => {
+    try {
+      const body = profileUpdateSchema.parse(req.body);
+      if (typeof repository.updateUserProfile !== 'function') {
+        return res.status(500).json({ error: 'Profile update is not available' });
+      }
+      const user = await repository.updateUserProfile({
+        userId: req.user.id,
+        fullName: sanitizeText(body.fullName, 120)
+      });
+      if (!user) return res.status(404).json({ error: 'User not found' });
+
+      await logProjectAction(req, {
+        actionType: 'profile.update',
+        entityType: 'user',
+        entityId: user.id,
+        summary: 'Profile updated',
+        details: { fullName: user.fullName }
+      });
+
+      return res.json({ ok: true, user: toPublicUser(user) });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/profile/change-password', requireAuth, async (req, res) => {
+    try {
+      const body = changePasswordSchema.parse(req.body);
+      if (typeof repository.findUserAuthById !== 'function' || typeof repository.updateUserPassword !== 'function') {
+        return res.status(500).json({ error: 'Password update is not available' });
+      }
+
+      const user = await repository.findUserAuthById(req.user.id);
+      if (!user) return res.status(404).json({ error: 'User not found' });
+
+      let validCurrentPassword = false;
+      let validTotpCode = false;
+
+      if (body.currentPassword) {
+        validCurrentPassword = await verifyPassword(body.currentPassword, user.passwordHash);
+      }
+
+      if (body.totpCode && user.totpEnabled && user.totpSecret) {
+        validTotpCode = verifyTotpCode(user.totpSecret, body.totpCode);
+      }
+
+      if (!validCurrentPassword && !validTotpCode) {
+        return res.status(401).json({ error: 'Current password or TOTP code is invalid' });
+      }
+
+      const newPasswordHash = await hashPassword(body.newPassword);
+      await repository.updateUserPassword({ userId: req.user.id, passwordHash: newPasswordHash });
+
+      await logProjectAction(req, {
+        actionType: 'profile.change_password',
+        entityType: 'user',
+        entityId: req.user.id,
+        summary: 'Password changed',
+        details: { authMethod: validCurrentPassword ? 'password' : 'totp' }
+      });
+
+      return res.json({ ok: true });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/profile/totp/setup', requireAuth, async (req, res) => {
+    try {
+      if (typeof repository.setTotpPendingSecret !== 'function') {
+        return res.status(500).json({ error: 'TOTP setup is not available' });
+      }
+
+      const secret = generateTotpSecret();
+      const user = await repository.setTotpPendingSecret({
+        userId: req.user.id,
+        pendingSecret: secret
+      });
+      if (!user) return res.status(404).json({ error: 'User not found' });
+
+      const issuer = 'KitaabPadhoIndia';
+      const otpauthUrl = createOtpAuthUrl({
+        issuer,
+        accountName: user.email,
+        secret
+      });
+
+      await logProjectAction(req, {
+        actionType: 'profile.totp_setup',
+        entityType: 'user',
+        entityId: user.id,
+        summary: 'TOTP setup initiated'
+      });
+
+      return res.json({
+        secret,
+        otpauthUrl,
+        accountName: user.email,
+        issuer
+      });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/profile/totp/enable', requireAuth, async (req, res) => {
+    try {
+      const body = totpEnableSchema.parse(req.body);
+      if (typeof repository.findUserAuthById !== 'function' || typeof repository.enableTotp !== 'function') {
+        return res.status(500).json({ error: 'TOTP enable is not available' });
+      }
+
+      const user = await repository.findUserAuthById(req.user.id);
+      if (!user) return res.status(404).json({ error: 'User not found' });
+      if (!user.totpPendingSecret) return res.status(400).json({ error: 'Run TOTP setup first' });
+
+      const valid = verifyTotpCode(user.totpPendingSecret, body.code);
+      if (!valid) return res.status(400).json({ error: 'Invalid TOTP code' });
+
+      const updated = await repository.enableTotp({ userId: user.id, secret: user.totpPendingSecret });
+      await logProjectAction(req, {
+        actionType: 'profile.totp_enable',
+        entityType: 'user',
+        entityId: user.id,
+        summary: 'TOTP enabled'
+      });
+      return res.json({ ok: true, user: toPublicUser(updated) });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/profile/totp/disable', requireAuth, async (req, res) => {
+    try {
+      const currentPassword = typeof req.body?.currentPassword === 'string' ? req.body.currentPassword : '';
+      const totpCode = typeof req.body?.totpCode === 'string' ? req.body.totpCode : '';
+
+      if (!currentPassword && !totpCode) {
+        return res.status(400).json({ error: 'Provide currentPassword or totpCode' });
+      }
+      if (typeof repository.findUserAuthById !== 'function' || typeof repository.disableTotp !== 'function') {
+        return res.status(500).json({ error: 'TOTP disable is not available' });
+      }
+
+      const user = await repository.findUserAuthById(req.user.id);
+      if (!user) return res.status(404).json({ error: 'User not found' });
+      if (!user.totpEnabled || !user.totpSecret) return res.status(400).json({ error: 'TOTP is not enabled' });
+
+      let validCurrentPassword = false;
+      let validTotpCode = false;
+
+      if (currentPassword) {
+        validCurrentPassword = await verifyPassword(currentPassword, user.passwordHash);
+      }
+      if (totpCode) {
+        validTotpCode = verifyTotpCode(user.totpSecret, totpCode);
+      }
+      if (!validCurrentPassword && !validTotpCode) {
+        return res.status(401).json({ error: 'Current password or TOTP code is invalid' });
+      }
+
+      const updated = await repository.disableTotp({ userId: user.id });
+      await logProjectAction(req, {
+        actionType: 'profile.totp_disable',
+        entityType: 'user',
+        entityId: user.id,
+        summary: 'TOTP disabled',
+        details: { authMethod: validCurrentPassword ? 'password' : 'totp' }
+      });
+      return res.json({ ok: true, user: toPublicUser(updated) });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/notifications', requireAuth, async (req, res) => {
+    try {
+      const queryFilters = notificationsQuerySchema.parse(req.query);
+      const data =
+        typeof repository.listNotifications === 'function'
+          ? await repository.listNotifications({
+              userId: req.user.id,
+              unreadOnly: queryFilters.unreadOnly,
+              limit: queryFilters.limit,
+              offset: queryFilters.offset
+            })
+          : [];
+      const unreadCount =
+        typeof repository.countUnreadNotifications === 'function'
+          ? await repository.countUnreadNotifications({ userId: req.user.id })
+          : 0;
+
+      return res.json({
+        data,
+        meta: {
+          unreadCount,
+          limit: queryFilters.limit,
+          offset: queryFilters.offset
+        }
+      });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid query' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/notifications/:id/read', requireAuth, async (req, res) => {
+    const notificationId = parseId(req.params.id);
+    if (!notificationId) return res.status(400).json({ error: 'Invalid notification id' });
+    try {
+      if (typeof repository.markNotificationRead !== 'function') {
+        return res.status(500).json({ error: 'Notification read is not available' });
+      }
+      const marked = await repository.markNotificationRead({
+        userId: req.user.id,
+        notificationId
+      });
+      if (!marked) return res.status(404).json({ error: 'Notification not found' });
+      return res.json({ ok: true });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/notifications/read-all', requireAuth, async (req, res) => {
+    try {
+      if (typeof repository.markAllNotificationsRead !== 'function') {
+        return res.status(500).json({ error: 'Notification read-all is not available' });
+      }
+      const updated = await repository.markAllNotificationsRead({ userId: req.user.id });
+      return res.json({ ok: true, updated });
     } catch (error) {
       return res.status(500).json({ error: error.message });
     }
@@ -313,6 +595,16 @@ function createApp(deps = {}) {
           areaCode: listing.areaCode
         }
       });
+      if (typeof repository.notifyAllUsersAboutListing === 'function') {
+        await repository.notifyAllUsersAboutListing({
+          actorId: req.user.id,
+          listingId: listing.id,
+          title: listing.title,
+          city: listing.city,
+          listingType: listing.listingType,
+          category: listing.category
+        });
+      }
       return res.status(201).json(listing);
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
@@ -474,6 +766,16 @@ function createApp(deps = {}) {
         summary: 'Community comment added',
         details: { postId }
       });
+      if (typeof repository.createUserNotification === 'function' && Number(post.createdBy) !== Number(req.user.id)) {
+        await repository.createUserNotification({
+          userId: post.createdBy,
+          kind: 'community_message',
+          title: 'New comment on your post',
+          body: `${req.user.fullName || 'A member'} replied: ${String(comment.content || '').slice(0, 140)}`,
+          entityType: 'community_post',
+          entityId: postId
+        });
+      }
       return res.status(201).json({ ...comment, authorName: req.user.fullName });
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
@@ -572,6 +874,115 @@ function createApp(deps = {}) {
       });
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid query' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const filters = adminUsersQuerySchema.parse(req.query);
+      const data =
+        typeof repository.listUsers === 'function'
+          ? await repository.listUsers({
+              q: filters.q || '',
+              limit: filters.limit,
+              offset: filters.offset
+            })
+          : [];
+      const total = typeof repository.countUsers === 'function' ? await repository.countUsers({ q: filters.q || '' }) : data.length;
+
+      await logProjectAction(req, {
+        actionType: 'admin.users_view',
+        entityType: 'admin_panel',
+        summary: 'Admin viewed users'
+      });
+
+      return res.json({
+        data: data.map(toPublicUser),
+        meta: { total, limit: filters.limit, offset: filters.offset }
+      });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid query' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/admin/users/:id/history', requireAuth, requireAdmin, async (req, res) => {
+    const actorId = parseId(req.params.id);
+    if (!actorId) return res.status(400).json({ error: 'Invalid user id' });
+    try {
+      const filters = adminActionQuerySchema.parse(req.query);
+      const mergedFilters = { ...filters, actorId };
+      const data =
+        typeof repository.listProjectActions === 'function' ? await repository.listProjectActions(mergedFilters) : [];
+      const total =
+        typeof repository.countProjectActions === 'function'
+          ? await repository.countProjectActions(mergedFilters)
+          : data.length;
+      return res.json({
+        data,
+        meta: { total, limit: mergedFilters.limit, offset: mergedFilters.offset }
+      });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid query' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/admin/change-password', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const body = adminChangePasswordSchema.parse(req.body);
+      if (typeof repository.findUserAuthById !== 'function' || typeof repository.updateUserPassword !== 'function') {
+        return res.status(500).json({ error: 'Admin password change is not available' });
+      }
+
+      const adminUser = await repository.findUserAuthById(req.user.id);
+      if (!adminUser) return res.status(404).json({ error: 'User not found' });
+      const validCurrent = await verifyPassword(body.currentPassword, adminUser.passwordHash);
+      if (!validCurrent) return res.status(401).json({ error: 'Current password is invalid' });
+
+      const newPasswordHash = await hashPassword(body.newPassword);
+      await repository.updateUserPassword({ userId: req.user.id, passwordHash: newPasswordHash });
+
+      await logProjectAction(req, {
+        actionType: 'admin.change_password',
+        entityType: 'user',
+        entityId: req.user.id,
+        summary: 'Admin changed own password'
+      });
+
+      return res.json({ ok: true });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/admin/users/reset-password', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const body = adminResetUserPasswordSchema.parse(req.body);
+      if (typeof repository.adminResetUserPassword !== 'function') {
+        return res.status(500).json({ error: 'Admin user password reset is not available' });
+      }
+
+      const newPasswordHash = await hashPassword(body.newPassword);
+      const user = await repository.adminResetUserPassword({
+        email: body.email,
+        passwordHash: newPasswordHash
+      });
+      if (!user) return res.status(404).json({ error: 'User not found' });
+
+      await logProjectAction(req, {
+        actionType: 'admin.reset_user_password',
+        entityType: 'user',
+        entityId: user.id,
+        summary: 'Admin reset user password',
+        details: { targetEmail: user.email }
+      });
+
+      return res.json({ ok: true, user: toPublicUser(user) });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
       return res.status(500).json({ error: error.message });
     }
   });

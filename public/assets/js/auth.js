@@ -16,7 +16,8 @@ export function initAuth({ state, onAuthChanged }) {
       if (openAuthBtn) openAuthBtn.hidden = true;
       if (logoutBtn) logoutBtn.hidden = false;
       const roleTag = state.user.role === 'admin' ? ' [admin]' : '';
-      if (authBadge) authBadge.textContent = `Hi ${state.user.fullName}${roleTag}`;
+      const totpTag = state.user.totpEnabled ? ' [2FA]' : '';
+      if (authBadge) authBadge.textContent = `Hi ${state.user.fullName}${roleTag}${totpTag}`;
     } else {
       if (openAuthBtn) openAuthBtn.hidden = false;
       if (logoutBtn) logoutBtn.hidden = true;
@@ -78,12 +79,20 @@ export function initAuth({ state, onAuthChanged }) {
   loginForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
+    const password = form.password.value || '';
+    const totpCode = form.totpCode.value.trim() || '';
+    if (!password && !totpCode) {
+      setText('authStatus', 'Enter password or TOTP code to login.');
+      return;
+    }
     setText('authStatus', 'Logging in...');
     try {
-      await login({
-        email: form.email.value.trim(),
-        password: form.password.value
-      });
+      const payload = {
+        email: form.email.value.trim()
+      };
+      if (password) payload.password = password;
+      if (totpCode) payload.totpCode = totpCode;
+      await login(payload);
       form.reset();
     } catch (error) {
       setText('authStatus', error.message || 'Login failed');
@@ -95,11 +104,18 @@ export function initAuth({ state, onAuthChanged }) {
     const form = event.currentTarget;
     setText('authStatus', 'Creating your account...');
     try {
-      await register({
+      const payload = {
         fullName: form.fullName.value.trim(),
         email: form.email.value.trim(),
         password: form.password.value
-      });
+      };
+      const totpSecret = form.totpSecret.value.trim().toUpperCase();
+      const totpCode = form.totpCode.value.trim();
+      if (totpSecret || totpCode) {
+        payload.totpSecret = totpSecret;
+        payload.totpCode = totpCode;
+      }
+      await register(payload);
       form.reset();
     } catch (error) {
       setText('authStatus', error.message || 'Signup failed');

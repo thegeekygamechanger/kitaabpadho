@@ -99,8 +99,11 @@ export function initAdmin({ state, openAuthModal }) {
   const searchInput = el('adminSearchInput');
   const actionTypeFilter = el('adminActionTypeFilter');
   const entityTypeFilter = el('adminEntityTypeFilter');
+  const actorIdFilter = el('adminActorIdFilter');
   const applyBtn = el('adminApplyFiltersBtn');
   const refreshBtn = el('adminRefreshBtn');
+  const adminPasswordForm = el('adminPasswordForm');
+  const adminUserResetForm = el('adminUserResetForm');
 
   function isAdmin() {
     return Boolean(state.user && state.user.role === 'admin');
@@ -114,12 +117,14 @@ export function initAdmin({ state, openAuthModal }) {
     if (searchInput) searchInput.value = state.admin.q;
     if (actionTypeFilter) actionTypeFilter.value = state.admin.actionType;
     if (entityTypeFilter) entityTypeFilter.value = state.admin.entityType;
+    if (actorIdFilter) actorIdFilter.value = state.admin.actorId;
   }
 
   function syncStateFromControls() {
     state.admin.q = searchInput?.value.trim() || '';
     state.admin.actionType = actionTypeFilter?.value.trim().toLowerCase() || '';
     state.admin.entityType = entityTypeFilter?.value.trim().toLowerCase() || '';
+    state.admin.actorId = actorIdFilter?.value.trim() || '';
   }
 
   function renderVisibility() {
@@ -165,6 +170,7 @@ export function initAdmin({ state, openAuthModal }) {
       q: state.admin.q,
       actionType: state.admin.actionType,
       entityType: state.admin.entityType,
+      actorId: state.admin.actorId || undefined,
       limit: state.admin.limit,
       offset: state.admin.offset
     });
@@ -196,13 +202,49 @@ export function initAdmin({ state, openAuthModal }) {
     await refresh();
   });
 
-  [searchInput, actionTypeFilter, entityTypeFilter].forEach((input) => {
+  [searchInput, actionTypeFilter, entityTypeFilter, actorIdFilter].forEach((input) => {
     input?.addEventListener('keydown', async (event) => {
       if (event.key !== 'Enter') return;
       event.preventDefault();
       syncStateFromControls();
       await refresh();
     });
+  });
+
+  adminPasswordForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!isAdmin()) return;
+    const form = event.currentTarget;
+    setText('adminPasswordStatus', 'Updating admin password...');
+    try {
+      await api.adminChangePassword({
+        currentPassword: form.currentPassword.value,
+        newPassword: form.newPassword.value
+      });
+      form.reset();
+      setText('adminPasswordStatus', 'Admin password updated.');
+      await refresh();
+    } catch (error) {
+      setText('adminPasswordStatus', error.message || 'Unable to update admin password');
+    }
+  });
+
+  adminUserResetForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!isAdmin()) return;
+    const form = event.currentTarget;
+    setText('adminUserResetStatus', 'Resetting user password...');
+    try {
+      await api.adminResetUserPassword({
+        email: form.email.value.trim(),
+        newPassword: form.newPassword.value
+      });
+      form.reset();
+      setText('adminUserResetStatus', 'User password reset done.');
+      await refresh();
+    } catch (error) {
+      setText('adminUserResetStatus', error.message || 'Unable to reset user password');
+    }
   });
 
   window.addEventListener('hashchange', () => {

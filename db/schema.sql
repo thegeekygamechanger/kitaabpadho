@@ -3,6 +3,9 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT UNIQUE NOT NULL,
   full_name TEXT NOT NULL,
   password_hash TEXT NOT NULL,
+  totp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  totp_secret TEXT,
+  totp_pending_secret TEXT,
   role TEXT NOT NULL DEFAULT 'student',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -11,7 +14,7 @@ CREATE TABLE IF NOT EXISTS listings (
   id BIGSERIAL PRIMARY KEY,
   title TEXT NOT NULL,
   description TEXT NOT NULL,
-  category TEXT NOT NULL CHECK (category IN ('book','instrument','notes','video','pdf')),
+  category TEXT NOT NULL CHECK (category IN ('book','instrument','notes','video','pdf','stationery','stationary')),
   listing_type TEXT NOT NULL CHECK (listing_type IN ('rent','buy','sell')),
   price NUMERIC(10,2) NOT NULL DEFAULT 0,
   city TEXT NOT NULL,
@@ -71,6 +74,18 @@ CREATE TABLE IF NOT EXISTS project_actions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS notifications (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
+  entity_type TEXT NOT NULL DEFAULT '',
+  entity_id BIGINT,
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_listings_geo ON listings (latitude, longitude);
 CREATE INDEX IF NOT EXISTS idx_listings_created_at ON listings (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_listings_filters ON listings (listing_type, category, area_code);
@@ -81,6 +96,8 @@ CREATE INDEX IF NOT EXISTS idx_community_comments_post ON community_comments (po
 CREATE INDEX IF NOT EXISTS idx_project_actions_created_at ON project_actions (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_project_actions_action_type ON project_actions (action_type);
 CREATE INDEX IF NOT EXISTS idx_project_actions_entity ON project_actions (entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications (user_id, is_read, created_at DESC);
 
 INSERT INTO community_categories (slug, name, description)
 VALUES

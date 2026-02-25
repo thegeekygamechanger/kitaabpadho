@@ -47,8 +47,13 @@
       <nav class="kb-nav">
         <a href="#marketplace">Marketplace</a>
         <a href="#community">Community</a>
+        <a id="profileNavLink" href="#profilePanel" hidden>Profile</a>
         <a id="adminNavLink" href="#adminPanel" hidden>Admin</a>
         <a href="#ai">Ask PadhAI</a>
+        <button id="notificationsBtn" class="kb-btn kb-btn-ghost notif-btn" hidden type="button">
+          Notifications
+          <span id="notificationsCount" class="notif-count">0</span>
+        </button>
         <span id="authBadge" class="kb-badge">Guest Mode</span>
       </nav>
     </header>
@@ -96,6 +101,7 @@
             <option value="notes">Notes</option>
             <option value="video">Videos</option>
             <option value="pdf">PDF</option>
+            <option value="stationery">Stationery</option>
           </select>
           <input id="cityFilter" class="kb-input" placeholder="Filter by city" />
           <select id="sortFilter" class="kb-select">
@@ -125,6 +131,7 @@
               <option value="notes">Notes</option>
               <option value="video">Video</option>
               <option value="pdf">PDF</option>
+              <option value="stationery">Stationery</option>
             </select>
             <select name="listingType" class="kb-select" required>
               <option value="buy">Buy</option>
@@ -185,6 +192,65 @@
         <div id="communityPosts" class="cards"></div>
       </section>
 
+      <section id="notificationsPanel" class="panel hidden">
+        <div class="panel-head">
+          <h2>Notifications</h2>
+          <div class="drawer-actions">
+            <button id="notificationsRefreshBtn" class="kb-btn kb-btn-ghost" type="button">Refresh</button>
+            <button id="notificationsReadAllBtn" class="kb-btn kb-btn-dark" type="button">Mark all read</button>
+          </div>
+        </div>
+        <p id="notificationsStatus" class="muted">Login to receive alerts for new arrivals and community updates.</p>
+        <div id="notificationsList" class="cards"></div>
+      </section>
+
+      <section id="profilePanel" class="panel hidden">
+        <div class="panel-head">
+          <h2>Profile</h2>
+          <p class="muted">Username, password and TOTP security settings.</p>
+        </div>
+        <p id="profileSummary" class="muted">Login to manage profile.</p>
+
+        <div class="profile-grid">
+          <form id="profileForm" class="drawer">
+            <h3>Update Username</h3>
+            <input name="fullName" class="kb-input" placeholder="Username / Full name" required />
+            <div class="drawer-actions">
+              <button class="kb-btn kb-btn-primary" type="submit">Save</button>
+            </div>
+            <p id="profileStatus" class="muted"></p>
+          </form>
+
+          <form id="profilePasswordForm" class="drawer">
+            <h3>Change Password</h3>
+            <input name="currentPassword" class="kb-input" type="password" placeholder="Current password (optional)" />
+            <input name="totpCode" class="kb-input" placeholder="TOTP code (optional)" />
+            <input name="newPassword" class="kb-input" type="password" placeholder="New password (min 8)" required />
+            <div class="drawer-actions">
+              <button class="kb-btn kb-btn-primary" type="submit">Change Password</button>
+            </div>
+            <p id="profilePasswordStatus" class="muted"></p>
+          </form>
+
+          <div class="drawer">
+            <h3>TOTP (Authenticator App)</h3>
+            <p class="muted">Use Google Authenticator, Microsoft Authenticator, or Authy.</p>
+            <div class="drawer-actions">
+              <button id="totpSetupBtn" class="kb-btn kb-btn-primary" type="button">Generate TOTP Secret</button>
+            </div>
+            <p id="totpSecretView" class="muted"></p>
+            <form id="totpEnableForm" style="display:grid;gap:0.5rem;margin-top:0.5rem">
+              <input name="code" class="kb-input" placeholder="Enter 6-digit code" required />
+              <div class="drawer-actions">
+                <button class="kb-btn kb-btn-dark" type="submit">Enable TOTP</button>
+                <button id="totpDisableBtn" class="kb-btn kb-btn-ghost" type="button">Disable TOTP</button>
+              </div>
+            </form>
+            <p id="totpStatus" class="muted"></p>
+          </div>
+        </div>
+      </section>
+
       <section id="adminPanel" class="panel hidden">
         <div class="panel-head">
           <h2>Admin Panel</h2>
@@ -198,7 +264,30 @@
           <input id="adminSearchInput" class="kb-input" placeholder="Search by summary or email" />
           <input id="adminActionTypeFilter" class="kb-input" placeholder="Action type (example: listing.create)" />
           <input id="adminEntityTypeFilter" class="kb-input" placeholder="Entity type (example: listing)" />
+          <input id="adminActorIdFilter" class="kb-input" placeholder="User ID (history filter)" />
           <button id="adminApplyFiltersBtn" class="kb-btn kb-btn-dark" type="button">Apply</button>
+        </div>
+
+        <div class="profile-grid">
+          <form id="adminPasswordForm" class="drawer">
+            <h3>Admin Change Password</h3>
+            <input name="currentPassword" class="kb-input" type="password" placeholder="Current password" required />
+            <input name="newPassword" class="kb-input" type="password" placeholder="New password (min 8)" required />
+            <div class="drawer-actions">
+              <button class="kb-btn kb-btn-primary" type="submit">Update Admin Password</button>
+            </div>
+            <p id="adminPasswordStatus" class="muted"></p>
+          </form>
+
+          <form id="adminUserResetForm" class="drawer">
+            <h3>Reset User Password (No TOTP)</h3>
+            <input name="email" class="kb-input" type="email" placeholder="User email" required />
+            <input name="newPassword" class="kb-input" type="password" placeholder="New password (min 8)" required />
+            <div class="drawer-actions">
+              <button class="kb-btn kb-btn-dark" type="submit">Reset User Password</button>
+            </div>
+            <p id="adminUserResetStatus" class="muted"></p>
+          </form>
         </div>
 
         <div id="adminActionsList" class="admin-actions"></div>
@@ -238,7 +327,8 @@
           <form id="loginForm">
             <h4>Login</h4>
             <input class="kb-input" name="email" type="email" placeholder="Email" required />
-            <input class="kb-input" name="password" type="password" placeholder="Password" required />
+            <input class="kb-input" name="password" type="password" placeholder="Password (optional if using TOTP)" />
+            <input class="kb-input" name="totpCode" placeholder="TOTP code (optional)" />
             <button class="kb-btn kb-btn-primary" type="submit">Login</button>
           </form>
           <form id="registerForm">
@@ -246,6 +336,8 @@
             <input class="kb-input" name="fullName" placeholder="Full name" required />
             <input class="kb-input" name="email" type="email" placeholder="Email" required />
             <input class="kb-input" name="password" type="password" placeholder="Password (min 8)" required />
+            <input class="kb-input" name="totpSecret" placeholder="TOTP secret (optional)" />
+            <input class="kb-input" name="totpCode" placeholder="TOTP code (optional)" />
             <button class="kb-btn kb-btn-ghost" type="submit">Create Account</button>
           </form>
         </div>

@@ -141,6 +141,25 @@ body {
   color: #fff;
 }
 
+.notif-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.notif-count {
+  min-width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 999px;
+  background: #ffe500;
+  color: #102654;
+  font-size: 0.74rem;
+  font-weight: 800;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 0.2rem;
+}
+
 .kb-nav {
   display: flex;
   align-items: center;
@@ -479,6 +498,16 @@ body {
 
 .modal-card.wide {
   width: min(920px, 96vw);
+}
+
+.profile-grid {
+  display: grid;
+  gap: 0.7rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+#totpSecretView {
+  white-space: pre-wrap;
 }
 
 .modal-card.update-card {

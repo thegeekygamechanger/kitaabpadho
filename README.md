@@ -42,6 +42,14 @@ npm test
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `GET /api/auth/me`
+- `PATCH /api/profile`
+- `POST /api/profile/change-password`
+- `POST /api/profile/totp/setup`
+- `POST /api/profile/totp/enable`
+- `POST /api/profile/totp/disable`
+- `GET /api/notifications`
+- `POST /api/notifications/:id/read`
+- `POST /api/notifications/read-all`
 - `GET /api/listings` filters include `sell`, `areaCode`, geo sort/pagination
 - `GET /api/listings/:id`
 - `POST /api/listings/:id/media`
@@ -53,6 +61,9 @@ npm test
 - `DELETE /api/community/comments/:id`
 - `GET /api/admin/summary` (admin only)
 - `GET /api/admin/actions` (admin only)
+- `POST /api/admin/change-password` (admin only)
+- `POST /api/admin/users/reset-password` (admin only)
+- `GET /api/admin/users/:id/history` (admin only)
 
 ## Admin panel
 - Admin panel is available in the web UI (`Admin` nav tab) only for users with `role = 'admin'`.
@@ -72,8 +83,8 @@ npm test
 ## Notes
 - If AI keys are missing, PadhAI returns graceful fallback message.
 - If R2 credentials are missing, upload endpoint returns metadata without persistent object storage.
-- Legacy PHP folders are intentionally left in repo for reference; new runtime is in `src/` + `public/`.
 - PWA now shows an update dialog when a new service worker is waiting; clicking `Update Now` applies it and reloads.
+- Marketplace catalog supports `stationery` category in filters and listings.
 
 ## Groq for PadhAI (Render env format)
 Set these env vars in Render to enable Groq:

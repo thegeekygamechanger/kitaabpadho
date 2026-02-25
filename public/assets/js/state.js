@@ -18,10 +18,17 @@ export const state = {
     q: '',
     categorySlug: ''
   },
+  notifications: {
+    unreadCount: 0,
+    limit: 20,
+    offset: 0,
+    unreadOnly: false
+  },
   admin: {
     q: '',
     actionType: '',
     entityType: '',
+    actorId: '',
     limit: 50,
     offset: 0
   }

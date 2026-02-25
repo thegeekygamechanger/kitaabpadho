@@ -1,6 +1,6 @@
 const { z } = require('zod');
 
-const categories = ['book', 'instrument', 'notes', 'video', 'pdf'];
+const categories = ['book', 'instrument', 'notes', 'video', 'pdf', 'stationery', 'stationary'];
 const listingTypes = ['rent', 'buy', 'sell'];
 const areaCodes = ['loni_kalbhor', 'hadapsar', 'camp', 'other'];
 
@@ -40,15 +40,71 @@ const listingQuerySchema = z.object({
   offset: optionalNumber(z.number().int().min(0).max(10000)).default(0)
 });
 
-const authRegisterSchema = z.object({
-  email: z.string().trim().email().max(180),
-  fullName: z.string().trim().min(2).max(120),
-  password: z.string().min(8).max(128)
+const totpCodeSchema = z.string().trim().regex(/^\d{6}$/);
+
+const authRegisterSchema = z
+  .object({
+    email: z.string().trim().email().max(180),
+    fullName: z.string().trim().min(2).max(120),
+    password: z.string().min(8).max(128),
+    totpSecret: z.string().trim().toUpperCase().regex(/^[A-Z2-7]{16,}$/).optional(),
+    totpCode: totpCodeSchema.optional()
+  })
+  .refine((value) => (value.totpSecret && value.totpCode) || (!value.totpSecret && !value.totpCode), {
+    message: 'Provide both totpSecret and totpCode or leave both empty',
+    path: ['totpSecret']
+  });
+
+const authLoginSchema = z
+  .object({
+    email: z.string().trim().email().max(180),
+    password: z.string().min(8).max(128).optional(),
+    totpCode: totpCodeSchema.optional()
+  })
+  .refine((value) => Boolean(value.password || value.totpCode), {
+    message: 'Provide password or totpCode',
+    path: ['password']
+  });
+
+const profileUpdateSchema = z.object({
+  fullName: z.string().trim().min(2).max(120)
 });
 
-const authLoginSchema = z.object({
+const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(8).max(128).optional(),
+    newPassword: z.string().min(8).max(128),
+    totpCode: totpCodeSchema.optional()
+  })
+  .refine((value) => Boolean(value.currentPassword || value.totpCode), {
+    message: 'Provide currentPassword or totpCode',
+    path: ['currentPassword']
+  });
+
+const totpEnableSchema = z.object({
+  code: totpCodeSchema
+});
+
+const notificationsQuerySchema = z.object({
+  unreadOnly: z.preprocess((value) => String(value).toLowerCase() === 'true', z.boolean()).optional().default(false),
+  limit: optionalNumber(z.number().int().min(1).max(100)).default(30),
+  offset: optionalNumber(z.number().int().min(0).max(10000)).default(0)
+});
+
+const adminUsersQuerySchema = z.object({
+  q: z.string().trim().min(1).max(160).optional(),
+  limit: optionalNumber(z.number().int().min(1).max(100)).default(50),
+  offset: optionalNumber(z.number().int().min(0).max(10000)).default(0)
+});
+
+const adminResetUserPasswordSchema = z.object({
   email: z.string().trim().email().max(180),
-  password: z.string().min(8).max(128)
+  newPassword: z.string().min(8).max(128)
+});
+
+const adminChangePasswordSchema = z.object({
+  currentPassword: z.string().min(8).max(128),
+  newPassword: z.string().min(8).max(128)
 });
 
 const communityPostSchema = z.object({
@@ -91,9 +147,16 @@ module.exports = {
   listingQuerySchema,
   authRegisterSchema,
   authLoginSchema,
+  profileUpdateSchema,
+  changePasswordSchema,
+  totpEnableSchema,
   communityPostSchema,
   communityCommentSchema,
   communityListQuerySchema,
+  notificationsQuerySchema,
   adminActionQuerySchema,
+  adminUsersQuerySchema,
+  adminResetUserPasswordSchema,
+  adminChangePasswordSchema,
   aiSchema
 };

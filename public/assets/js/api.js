@@ -50,6 +50,14 @@ export const api = {
   authLogin: (data) => apiRequest('/api/auth/login', { method: 'POST', body: data }),
   authLogout: () => apiRequest('/api/auth/logout', { method: 'POST' }),
   authMe: () => apiRequest('/api/auth/me'),
+  updateProfile: (data) => apiRequest('/api/profile', { method: 'PATCH', body: data }),
+  changePassword: (data) => apiRequest('/api/profile/change-password', { method: 'POST', body: data }),
+  setupTotp: () => apiRequest('/api/profile/totp/setup', { method: 'POST' }),
+  enableTotp: (code) => apiRequest('/api/profile/totp/enable', { method: 'POST', body: { code } }),
+  disableTotp: (data) => apiRequest('/api/profile/totp/disable', { method: 'POST', body: data }),
+  listNotifications: (filters) => apiRequest(`/api/notifications${buildQuery(filters)}`),
+  readNotification: (id) => apiRequest(`/api/notifications/${id}/read`, { method: 'POST' }),
+  readAllNotifications: () => apiRequest('/api/notifications/read-all', { method: 'POST' }),
   locationNearby: (lat, lon) => apiRequest(`/api/location/nearby?lat=${lat}&lon=${lon}`),
   listListings: (filters) => apiRequest(`/api/listings${buildQuery(filters)}`),
   listingById: (id) => apiRequest(`/api/listings/${id}`),
@@ -68,5 +76,9 @@ export const api = {
   deleteCommunityComment: (commentId) => apiRequest(`/api/community/comments/${commentId}`, { method: 'DELETE' }),
   askAI: (prompt) => apiRequest('/api/ai/chat', { method: 'POST', body: { prompt } }),
   adminSummary: () => apiRequest('/api/admin/summary'),
-  listAdminActions: (filters) => apiRequest(`/api/admin/actions${buildQuery(filters)}`)
+  listAdminActions: (filters) => apiRequest(`/api/admin/actions${buildQuery(filters)}`),
+  listAdminUsers: (filters) => apiRequest(`/api/admin/users${buildQuery(filters)}`),
+  adminChangePassword: (data) => apiRequest('/api/admin/change-password', { method: 'POST', body: data }),
+  adminResetUserPassword: (data) => apiRequest('/api/admin/users/reset-password', { method: 'POST', body: data }),
+  adminUserHistory: (userId, filters) => apiRequest(`/api/admin/users/${userId}/history${buildQuery(filters)}`)
 };

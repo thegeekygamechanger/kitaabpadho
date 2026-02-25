@@ -8,7 +8,15 @@ function createRepository(queryFn) {
   return {
     async findUserByEmail(email) {
       const result = await run(
-        `SELECT id, email, full_name AS "fullName", password_hash AS "passwordHash", role
+        `SELECT
+          id,
+          email,
+          full_name AS "fullName",
+          password_hash AS "passwordHash",
+          role,
+          totp_enabled AS "totpEnabled",
+          totp_secret AS "totpSecret",
+          totp_pending_secret AS "totpPendingSecret"
          FROM users
          WHERE lower(email) = lower($1)
          LIMIT 1`,
@@ -19,7 +27,31 @@ function createRepository(queryFn) {
 
     async findUserById(id) {
       const result = await run(
-        `SELECT id, email, full_name AS "fullName", role
+        `SELECT
+          id,
+          email,
+          full_name AS "fullName",
+          role,
+          totp_enabled AS "totpEnabled"
+         FROM users
+         WHERE id = $1
+         LIMIT 1`,
+        [id]
+      );
+      return result.rows[0] || null;
+    },
+
+    async findUserAuthById(id) {
+      const result = await run(
+        `SELECT
+          id,
+          email,
+          full_name AS "fullName",
+          password_hash AS "passwordHash",
+          role,
+          totp_enabled AS "totpEnabled",
+          totp_secret AS "totpSecret",
+          totp_pending_secret AS "totpPendingSecret"
          FROM users
          WHERE id = $1
          LIMIT 1`,
@@ -32,10 +64,120 @@ function createRepository(queryFn) {
       const result = await run(
         `INSERT INTO users (email, full_name, password_hash, role)
          VALUES ($1, $2, $3, 'student')
-         RETURNING id, email, full_name AS "fullName", role`,
+         RETURNING id, email, full_name AS "fullName", role, totp_enabled AS "totpEnabled"`,
         [email, fullName, passwordHash]
       );
       return result.rows[0];
+    },
+
+    async updateUserProfile({ userId, fullName }) {
+      const result = await run(
+        `UPDATE users
+         SET full_name = $2
+         WHERE id = $1
+         RETURNING id, email, full_name AS "fullName", role, totp_enabled AS "totpEnabled"`,
+        [userId, fullName]
+      );
+      return result.rows[0] || null;
+    },
+
+    async updateUserPassword({ userId, passwordHash }) {
+      const result = await run(
+        `UPDATE users
+         SET password_hash = $2
+         WHERE id = $1
+         RETURNING id`,
+        [userId, passwordHash]
+      );
+      return result.rows[0] || null;
+    },
+
+    async setTotpPendingSecret({ userId, pendingSecret }) {
+      const result = await run(
+        `UPDATE users
+         SET totp_pending_secret = $2
+         WHERE id = $1
+         RETURNING id, email, full_name AS "fullName", totp_pending_secret AS "totpPendingSecret", totp_enabled AS "totpEnabled"`,
+        [userId, pendingSecret]
+      );
+      return result.rows[0] || null;
+    },
+
+    async enableTotp({ userId, secret }) {
+      const result = await run(
+        `UPDATE users
+         SET totp_enabled = TRUE,
+             totp_secret = $2,
+             totp_pending_secret = NULL
+         WHERE id = $1
+         RETURNING id, email, full_name AS "fullName", role, totp_enabled AS "totpEnabled"`,
+        [userId, secret]
+      );
+      return result.rows[0] || null;
+    },
+
+    async disableTotp({ userId }) {
+      const result = await run(
+        `UPDATE users
+         SET totp_enabled = FALSE,
+             totp_secret = NULL,
+             totp_pending_secret = NULL
+         WHERE id = $1
+         RETURNING id, email, full_name AS "fullName", role, totp_enabled AS "totpEnabled"`,
+        [userId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async listUsers({ q = '', limit = 50, offset = 0 } = {}) {
+      const values = [];
+      let whereSql = '';
+      if (q) {
+        values.push(`%${q}%`);
+        whereSql = `WHERE (u.email ILIKE $1 OR u.full_name ILIKE $1)`;
+      }
+      values.push(limit, offset);
+      const limitParam = values.length - 1;
+      const offsetParam = values.length;
+
+      const result = await run(
+        `SELECT
+          u.id,
+          u.email,
+          u.full_name AS "fullName",
+          u.role,
+          u.totp_enabled AS "totpEnabled",
+          u.created_at AS "createdAt"
+         FROM users u
+         ${whereSql}
+         ORDER BY u.created_at DESC
+         LIMIT $${limitParam}
+         OFFSET $${offsetParam}`,
+        values
+      );
+      return result.rows;
+    },
+
+    async countUsers({ q = '' } = {}) {
+      const values = [];
+      let whereSql = '';
+      if (q) {
+        values.push(`%${q}%`);
+        whereSql = `WHERE (email ILIKE $1 OR full_name ILIKE $1)`;
+      }
+      const result = await run(`SELECT COUNT(*)::int AS total FROM users ${whereSql}`, values);
+      return result.rows[0]?.total || 0;
+    },
+
+    async adminResetUserPassword({ email, passwordHash }) {
+      const result = await run(
+        `UPDATE users
+         SET password_hash = $2
+         WHERE lower(email) = lower($1)
+         RETURNING id, email, full_name AS "fullName", role, totp_enabled AS "totpEnabled"`,
+        [email, passwordHash]
+      );
+      return result.rows[0] || null;
     },
 
     async createProjectAction({
@@ -323,6 +465,24 @@ function createRepository(queryFn) {
       return result.rows[0];
     },
 
+    async notifyAllUsersAboutListing({ actorId, listingId, title, city, listingType, category }) {
+      const result = await run(
+        `INSERT INTO notifications (user_id, kind, title, body, entity_type, entity_id)
+         SELECT
+           u.id,
+           'listing_new',
+           $3,
+           $4,
+           'listing',
+           $2
+         FROM users u
+         WHERE u.id <> $1
+         RETURNING id`,
+        [actorId, listingId, `New arrival: ${title}`, `${title} • ${city} • ${listingType}/${category}`]
+      );
+      return result.rowCount || 0;
+    },
+
     async getListingById(id) {
       const result = await run(
         `SELECT
@@ -530,6 +690,86 @@ function createRepository(queryFn) {
         [postId, createdBy, content]
       );
       return result.rows[0];
+    },
+
+    async createUserNotification({ userId, kind, title, body = '', entityType = '', entityId = null }) {
+      const result = await run(
+        `INSERT INTO notifications (user_id, kind, title, body, entity_type, entity_id)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING
+          id,
+          user_id AS "userId",
+          kind,
+          title,
+          body,
+          entity_type AS "entityType",
+          entity_id AS "entityId",
+          is_read AS "isRead",
+          created_at AS "createdAt"`,
+        [userId, kind, title, body, entityType, entityId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async listNotifications({ userId, unreadOnly = false, limit = 30, offset = 0 }) {
+      const values = [userId];
+      let whereSql = 'WHERE user_id = $1';
+      if (unreadOnly) whereSql += ' AND is_read = FALSE';
+
+      values.push(limit, offset);
+      const limitParam = values.length - 1;
+      const offsetParam = values.length;
+
+      const result = await run(
+        `SELECT
+          id,
+          user_id AS "userId",
+          kind,
+          title,
+          body,
+          entity_type AS "entityType",
+          entity_id AS "entityId",
+          is_read AS "isRead",
+          created_at AS "createdAt"
+         FROM notifications
+         ${whereSql}
+         ORDER BY created_at DESC
+         LIMIT $${limitParam}
+         OFFSET $${offsetParam}`,
+        values
+      );
+      return result.rows;
+    },
+
+    async countUnreadNotifications({ userId }) {
+      const result = await run(
+        `SELECT COUNT(*)::int AS total
+         FROM notifications
+         WHERE user_id = $1 AND is_read = FALSE`,
+        [userId]
+      );
+      return result.rows[0]?.total || 0;
+    },
+
+    async markNotificationRead({ userId, notificationId }) {
+      const result = await run(
+        `UPDATE notifications
+         SET is_read = TRUE
+         WHERE id = $1 AND user_id = $2
+         RETURNING id`,
+        [notificationId, userId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async markAllNotificationsRead({ userId }) {
+      const result = await run(
+        `UPDATE notifications
+         SET is_read = TRUE
+         WHERE user_id = $1 AND is_read = FALSE`,
+        [userId]
+      );
+      return result.rowCount || 0;
     },
 
     async deleteCommunityComment(commentId, userId) {

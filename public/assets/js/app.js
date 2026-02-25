@@ -4,6 +4,8 @@ import { initAuth } from './auth.js';
 import { initCommunity } from './community.js';
 import { initLocation } from './location.js';
 import { initMarketplace } from './marketplace.js';
+import { initNotifications } from './notifications.js';
+import { initProfile } from './profile.js';
 import { initPwa } from './pwa.js';
 import { state } from './state.js';
 import { el, hideModal } from './ui.js';
@@ -35,10 +37,30 @@ function boot() {
     openAuthModal: (message) => auth?.openAuthModal(message)
   });
 
+  const profile = initProfile({
+    state,
+    openAuthModal: (message) => auth?.openAuthModal(message),
+    onUserUpdated: (user) => {
+      state.user = user;
+      auth?.renderAuth?.();
+    }
+  });
+
+  const notifications = initNotifications({
+    state,
+    openAuthModal: (message) => auth?.openAuthModal(message)
+  });
+
   auth = initAuth({
     state,
     onAuthChanged: async () => {
-      await Promise.all([marketplace.refreshListings(), community.refreshPosts(), admin.onAuthChanged()]);
+      await Promise.all([
+        marketplace.refreshListings(),
+        community.refreshPosts(),
+        admin.onAuthChanged(),
+        profile.onAuthChanged(),
+        notifications.onAuthChanged()
+      ]);
     }
   });
 
@@ -69,7 +91,13 @@ function boot() {
   Promise.all([auth.refreshUser(), community.loadCategories()])
     .catch(() => null)
     .finally(async () => {
-      await Promise.all([marketplace.refreshListings(), community.refreshPosts(), admin.refresh()]);
+      await Promise.all([
+        marketplace.refreshListings(),
+        community.refreshPosts(),
+        admin.refresh(),
+        profile.refreshUser(),
+        notifications.refresh()
+      ]);
     });
 }
 

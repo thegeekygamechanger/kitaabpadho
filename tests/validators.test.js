@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const {
   listingSchema,
   listingQuerySchema,
+  authLoginSchema,
+  authRegisterSchema,
   communityPostSchema,
   communityCommentSchema,
   adminActionQuerySchema
@@ -82,4 +84,44 @@ test('adminActionQuerySchema parses optional filters safely', () => {
   assert.equal(parsed.actorId, 8);
   assert.equal(parsed.limit, 25);
   assert.equal(parsed.offset, 5);
+});
+
+test('authLoginSchema accepts password or totpCode', () => {
+  const passwordLogin = authLoginSchema.parse({
+    email: 'x@y.com',
+    password: 'StrongPass#123'
+  });
+  const totpLogin = authLoginSchema.parse({
+    email: 'x@y.com',
+    totpCode: '123456'
+  });
+
+  assert.equal(passwordLogin.email, 'x@y.com');
+  assert.equal(totpLogin.totpCode, '123456');
+  assert.throws(() =>
+    authLoginSchema.parse({
+      email: 'x@y.com'
+    })
+  );
+});
+
+test('authRegisterSchema validates optional totp pair', () => {
+  const withTotp = authRegisterSchema.parse({
+    fullName: 'A User',
+    email: 'a@b.com',
+    password: 'StrongPass#123',
+    totpSecret: 'JBSWY3DPEHPK3PXP',
+    totpCode: '123456'
+  });
+
+  assert.equal(withTotp.totpSecret, 'JBSWY3DPEHPK3PXP');
+
+  assert.throws(() =>
+    authRegisterSchema.parse({
+      fullName: 'A User',
+      email: 'a@b.com',
+      password: 'StrongPass#123',
+      totpSecret: 'JBSWY3DPEHPK3PXP'
+    })
+  );
 });
