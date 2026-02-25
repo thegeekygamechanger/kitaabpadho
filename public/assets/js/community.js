@@ -26,6 +26,11 @@ export function initCommunity({ state, openAuthModal }) {
   }
 
   async function loadCategories() {
+    if (!state.user) {
+      if (categoryFilter) categoryFilter.innerHTML = '<option value="">Login Required</option>';
+      if (postForm?.categorySlug) postForm.categorySlug.innerHTML = '';
+      return;
+    }
     try {
       const result = await api.listCommunityCategories();
       const categories = result.data || [];
@@ -76,6 +81,10 @@ export function initCommunity({ state, openAuthModal }) {
 
   async function refreshPosts() {
     if (!postsWrap) return;
+    if (!state.user) {
+      postsWrap.innerHTML = renderEmpty('Login / Signup to access Community discussions.');
+      return;
+    }
     postsWrap.innerHTML = renderEmpty('Loading community topics...');
     try {
       const result = await api.listCommunityPosts(postFilters());

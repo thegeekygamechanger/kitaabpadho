@@ -22,14 +22,46 @@ function wireModalDismiss() {
 function boot() {
   let auth;
   const viewIds = ['marketplace', 'community', 'ai', 'notificationsPanel', 'profilePanel'];
+  const gatedGuestViews = ['community', 'ai', 'notificationsPanel', 'profilePanel'];
+  const guestPromptSessionKey = 'kp_guest_login_prompt_v1';
+  let guestPromptBound = false;
+
+  function onGuestScrollPrompt() {
+    if (state.user) {
+      if (guestPromptBound) {
+        window.removeEventListener('scroll', onGuestScrollPrompt);
+        guestPromptBound = false;
+      }
+      return;
+    }
+    if (window.scrollY < 620) return;
+    sessionStorage.setItem(guestPromptSessionKey, '1');
+    if (guestPromptBound) {
+      window.removeEventListener('scroll', onGuestScrollPrompt);
+      guestPromptBound = false;
+    }
+    auth?.openAuthModal?.('Login / Signup to unlock Community, Ask PadhAI, notifications, and full buyer actions.');
+  }
+
+  function syncGuestPromptWatch() {
+    if (state.user || sessionStorage.getItem(guestPromptSessionKey) === '1') {
+      if (guestPromptBound) {
+        window.removeEventListener('scroll', onGuestScrollPrompt);
+        guestPromptBound = false;
+      }
+      return;
+    }
+    if (!guestPromptBound) {
+      window.addEventListener('scroll', onGuestScrollPrompt, { passive: true });
+      guestPromptBound = true;
+    }
+  }
 
   function syncTabView() {
     const rawTarget = String(window.location.hash || '#marketplace').replace('#', '');
     const requested = viewIds.includes(rawTarget) ? rawTarget : 'marketplace';
-    const target =
-      (requested === 'profilePanel' || requested === 'notificationsPanel') && !state.user
-        ? 'marketplace'
-        : requested;
+    const blockedForGuest = !state.user && gatedGuestViews.includes(requested);
+    const target = blockedForGuest ? 'marketplace' : requested;
 
     const hero = el('heroSection');
     if (hero) hero.classList.toggle('view-hidden', target !== 'marketplace');
@@ -49,6 +81,9 @@ function boot() {
 
     if (requested !== target) {
       window.history.replaceState(null, '', `#${target}`);
+      if (blockedForGuest) {
+        auth?.openAuthModal?.('Login / Signup to access Community, Ask PadhAI, and notifications.');
+      }
     }
   }
 
@@ -83,14 +118,16 @@ function boot() {
   auth = initAuth({
     state,
     onAuthChanged: async () => {
+      if (!state.user && !state.marketplace.category) state.marketplace.category = 'stationery';
       await Promise.all([
         marketplace.refreshListings(),
-        community.refreshPosts(),
+        state.user ? community.loadCategories().then(() => community.refreshPosts()) : Promise.resolve(),
         profile.onAuthChanged(),
         notifications.onAuthChanged(),
         realtime.onAuthChanged()
       ]);
       syncTabView();
+      syncGuestPromptWatch();
     }
   });
 
@@ -107,7 +144,10 @@ function boot() {
     }
   });
 
-  initAi({ state });
+  initAi({
+    state,
+    openAuthModal: (message) => auth?.openAuthModal(message)
+  });
   initPwa();
   wireModalDismiss();
   syncTabView();
@@ -121,17 +161,22 @@ function boot() {
     document.getElementById('marketplace')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 
-  Promise.all([auth.refreshUser(), community.loadCategories()])
+  Promise.all([auth.refreshUser()])
     .catch(() => null)
     .finally(async () => {
+      if (!state.user && !state.marketplace.category) state.marketplace.category = 'stationery';
+      if (state.user) {
+        await community.loadCategories().catch(() => null);
+      }
       await Promise.all([
         marketplace.refreshListings(),
-        community.refreshPosts(),
+        state.user ? community.refreshPosts() : Promise.resolve(),
         profile.refreshUser(),
         notifications.refresh(),
         realtime.onAuthChanged()
       ]);
       syncTabView();
+      syncGuestPromptWatch();
     });
 }
 

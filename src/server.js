@@ -1235,7 +1235,7 @@ function createApp(deps = {}) {
     }
   });
 
-  app.get('/api/community/categories', async (_, res) => {
+  app.get('/api/community/categories', requireAuth, async (_, res) => {
     try {
       const data = await repository.listCommunityCategories();
       return res.json({ data });
@@ -1244,7 +1244,7 @@ function createApp(deps = {}) {
     }
   });
 
-  app.get('/api/community/posts', async (req, res) => {
+  app.get('/api/community/posts', requireAuth, async (req, res) => {
     try {
       const filters = communityListQuerySchema.parse(req.query);
       const data = await repository.listCommunityPosts(filters);
@@ -1259,7 +1259,7 @@ function createApp(deps = {}) {
     }
   });
 
-  app.get('/api/community/posts/:id', async (req, res) => {
+  app.get('/api/community/posts/:id', requireAuth, async (req, res) => {
     const postId = parseId(req.params.id);
     if (!postId) return res.status(400).json({ error: 'Invalid post id' });
 
@@ -1764,7 +1764,7 @@ function createApp(deps = {}) {
     }
   });
 
-  app.post('/api/ai/chat', async (req, res) => {
+  app.post('/api/ai/chat', requireAuth, async (req, res) => {
     try {
       const body = aiSchema.parse(req.body);
       const prompt = sanitizeText(body.prompt, 2000);

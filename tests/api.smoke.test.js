@@ -416,7 +416,7 @@ test('API smoke coverage for health/auth/listings/community/ai/location', async 
 
   const aiRes = await fetch(`${baseUrl}/api/ai/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', cookie: authCookie },
     body: JSON.stringify({ prompt: 'Recommend rent options in Hadapsar' })
   });
   assert.equal(aiRes.status, 200);

@@ -1,12 +1,17 @@
 import { api } from './api.js';
 import { el, setText } from './ui.js';
 
-export function initAi({ state }) {
+export function initAi({ state, openAuthModal }) {
   const form = el('aiForm');
   const answerNode = el('aiAnswer');
 
   form?.addEventListener('submit', async (event) => {
     event.preventDefault();
+    if (!state.user) {
+      setText('aiStatus', 'Login required to use Ask PadhAI.');
+      openAuthModal?.('Login / Signup to use Ask PadhAI.');
+      return;
+    }
     const prompt = form.prompt.value.trim();
     if (!prompt) return;
 
@@ -27,6 +32,7 @@ export function initAi({ state }) {
       if (answerNode) answerNode.textContent = result.text || 'No response';
     } catch (error) {
       setText('aiStatus', error.message || 'Unable to get AI response');
+      if (error?.status === 401) openAuthModal?.('Login / Signup to use Ask PadhAI.');
     }
   });
 }

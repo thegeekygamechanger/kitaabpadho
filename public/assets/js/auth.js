@@ -7,6 +7,8 @@ export function initAuth({ state, onAuthChanged }) {
   const closeAuthBtn = el('closeAuthBtn');
   const logoutBtn = el('logoutBtn');
   const authBadge = el('authBadge');
+  const communityNavLink = el('communityNavLink');
+  const aiNavLink = el('aiNavLink');
   const authStatus = el('authStatus');
   const loginForm = el('loginForm');
   const registerForm = el('registerForm');
@@ -17,6 +19,8 @@ export function initAuth({ state, onAuthChanged }) {
     if (state.user) {
       if (openAuthBtn) openAuthBtn.hidden = true;
       if (logoutBtn) logoutBtn.hidden = false;
+      if (communityNavLink) communityNavLink.hidden = false;
+      if (aiNavLink) aiNavLink.hidden = false;
       if (authBadge) {
         authBadge.textContent = `Hi ${state.user.fullName}`;
         authBadge.classList.add('is-user');
@@ -25,6 +29,8 @@ export function initAuth({ state, onAuthChanged }) {
     } else {
       if (openAuthBtn) openAuthBtn.hidden = false;
       if (logoutBtn) logoutBtn.hidden = true;
+      if (communityNavLink) communityNavLink.hidden = true;
+      if (aiNavLink) aiNavLink.hidden = true;
       if (authBadge) {
         authBadge.textContent = 'Guest Mode';
         authBadge.classList.remove('is-user');
