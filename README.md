@@ -74,3 +74,19 @@ npm test
 - If R2 credentials are missing, upload endpoint returns metadata without persistent object storage.
 - Legacy PHP folders are intentionally left in repo for reference; new runtime is in `src/` + `public/`.
 - PWA now shows an update dialog when a new service worker is waiting; clicking `Update Now` applies it and reloads.
+
+## Groq for PadhAI (Render env format)
+Set these env vars in Render to enable Groq:
+```env
+GROQ_API_KEY=your_groq_api_key
+AI_MODEL_GROQ=llama-3.1-8b-instant
+AI_PRIMARY_PROVIDER=groq
+AI_TIMEOUT_MS=20000
+GROQ_BASE_URL=https://api.groq.com/openai/v1
+```
+Optional fallback to Gemini:
+```env
+GEMINI_API_KEY=your_gemini_api_key
+AI_MODEL_GEMINI=gemini-1.5-flash
+AI_GEMINI_WEIGHT=0.75
+```

@@ -22,6 +22,9 @@ module.exports = {
     groqApiKey: process.env.GROQ_API_KEY || '',
     modelGemini: process.env.AI_MODEL_GEMINI || 'gemini-1.5-flash',
     modelGroq: process.env.AI_MODEL_GROQ || 'llama-3.1-8b-instant',
-    geminiWeight: Number(process.env.AI_GEMINI_WEIGHT || 0.75)
+    geminiWeight: Number(process.env.AI_GEMINI_WEIGHT || 0.75),
+    primaryProvider: process.env.AI_PRIMARY_PROVIDER || 'auto',
+    timeoutMs: Number(process.env.AI_TIMEOUT_MS || 20000),
+    groqBaseUrl: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1'
   }
 };
