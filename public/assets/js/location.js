@@ -1,12 +1,6 @@
 import { api } from './api.js';
 import { el, setText } from './ui.js';
 
-function setActiveAreaChip(areaCode) {
-  document.querySelectorAll('.area-chip').forEach((chip) => {
-    chip.classList.toggle('active', chip.dataset.area === areaCode);
-  });
-}
-
 function appendOption(select, value, label) {
   const option = document.createElement('option');
   option.value = value;
@@ -14,10 +8,17 @@ function appendOption(select, value, label) {
   select.appendChild(option);
 }
 
-export function initLocation({ state, onLocationChanged, onAreaChanged }) {
+function toAreaCode(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+export function initLocation({ state, onLocationChanged, onAreaChanged, onGeoOptionsChanged }) {
   const topAreaSelect = el('topAreaSelect');
   const locateBtn = el('locateBtn');
-  const listingForm = el('listingForm');
 
   function renderAreaSelect() {
     if (!topAreaSelect) return;
@@ -69,6 +70,11 @@ export function initLocation({ state, onLocationChanged, onAreaChanged }) {
     const hasSelection = Array.from(topAreaSelect.options).some((option) => option.value === nextSelection);
     topAreaSelect.value = hasSelection ? nextSelection : 'all';
     if (!hasSelection) state.location.areaSelectValue = 'all';
+
+    onGeoOptionsChanged?.({
+      nearbyCities: state.location.nearbyCities || [],
+      localityOptions: state.location.localityOptions || []
+    });
   }
 
   function setAreaCode(selectionValue) {
@@ -80,7 +86,6 @@ export function initLocation({ state, onLocationChanged, onAreaChanged }) {
       state.location.selectedCity = filterCity;
       state.location.areaSelectValue = value;
       if (topAreaSelect) topAreaSelect.value = value;
-      setActiveAreaChip('all');
       if (state.location.address) {
         setText('locationStatus', `${state.location.address} | Locality: ${localityName}`);
       }
@@ -94,7 +99,6 @@ export function initLocation({ state, onLocationChanged, onAreaChanged }) {
       state.location.selectedCity = cityName;
       state.location.areaSelectValue = value;
       if (topAreaSelect) topAreaSelect.value = value;
-      setActiveAreaChip('all');
       onAreaChanged?.({ areaCode: 'all', city: cityName });
       return;
     }
@@ -103,22 +107,7 @@ export function initLocation({ state, onLocationChanged, onAreaChanged }) {
     state.location.selectedCity = '';
     state.location.areaSelectValue = value;
     if (topAreaSelect) topAreaSelect.value = value;
-    setActiveAreaChip(value);
     onAreaChanged?.({ areaCode: value, city: '' });
-  }
-
-  async function loadAreaOptions() {
-    try {
-      const result = await api.listAreas();
-      const rows = Array.isArray(result.data) ? result.data : [];
-      state.location.areaOptions = rows.map((row) => ({
-        value: row.value,
-        label: row.label
-      }));
-      renderAreaSelect();
-    } catch {
-      renderAreaSelect();
-    }
   }
 
   async function resolveLocation(latitude, longitude) {
@@ -134,6 +123,12 @@ export function initLocation({ state, onLocationChanged, onAreaChanged }) {
           }))
           .filter((row) => row.name.length > 0)
       : [];
+    state.location.areaOptions = state.location.nearbyCities
+      .map((row) => ({
+        value: toAreaCode(row.name || row.city),
+        label: String(row.name || row.city || '').trim()
+      }))
+      .filter((row) => row.value && row.label);
     state.location.localityOptions = Array.isArray(result.localityOptions)
       ? result.localityOptions
           .map((row) => ({
@@ -153,22 +148,14 @@ export function initLocation({ state, onLocationChanged, onAreaChanged }) {
         });
       }
     }
-    if (Array.isArray(result.areaOptions) && result.areaOptions.length > 0) {
-      state.location.areaOptions = result.areaOptions.map((row) => ({
-        value: row.value,
-        label: row.label
-      }));
-    }
     renderAreaSelect();
 
     setText('locationStatus', result.current.address);
-
-    if (listingForm?.latitude) listingForm.latitude.value = String(latitude);
-    if (listingForm?.longitude) listingForm.longitude.value = String(longitude);
-    if (listingForm?.city && !listingForm.city.value) {
-      listingForm.city.value = result.current.address.split(',')[0] || 'Detected City';
-    }
-    onLocationChanged?.(state.location.coords);
+    onLocationChanged?.(state.location.coords, {
+      nearbyCities: state.location.nearbyCities,
+      localityOptions: state.location.localityOptions,
+      current: result.current
+    });
   }
 
   topAreaSelect?.addEventListener('change', (event) => {
@@ -189,18 +176,19 @@ export function initLocation({ state, onLocationChanged, onAreaChanged }) {
           setText('locationStatus', error.message || 'Unable to fetch nearby location');
         }
       },
-      () => setText('locationStatus', 'Location permission denied. You can still use static area filters.')
+      () => setText('locationStatus', 'Location permission denied. Enable GPS to filter nearby listings.')
     );
   });
 
-  document.querySelectorAll('.area-chip').forEach((chip) => {
-    chip.addEventListener('click', () => {
-      setAreaCode(chip.dataset.area || 'all');
-    });
-  });
-
-  loadAreaOptions();
+  renderAreaSelect();
   setAreaCode(state.location.areaCode);
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      (position) => resolveLocation(position.coords.latitude, position.coords.longitude).catch(() => null),
+      () => null,
+      { maximumAge: 180000, timeout: 8000 }
+    );
+  }
 
   return { setAreaCode, resolveLocation };
 }

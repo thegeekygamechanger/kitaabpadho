@@ -9,6 +9,7 @@ export function initAuth({ state, onAuthChanged }) {
   const authBadge = el('authBadge');
   const communityNavLink = el('communityNavLink');
   const aiNavLink = el('aiNavLink');
+  const supportNavLink = el('supportNavLink');
   const authStatus = el('authStatus');
   const loginForm = el('loginForm');
   const registerForm = el('registerForm');
@@ -21,6 +22,7 @@ export function initAuth({ state, onAuthChanged }) {
       if (logoutBtn) logoutBtn.hidden = false;
       if (communityNavLink) communityNavLink.hidden = false;
       if (aiNavLink) aiNavLink.hidden = false;
+      if (supportNavLink) supportNavLink.hidden = false;
       if (authBadge) {
         authBadge.textContent = `Hi ${state.user.fullName}`;
         authBadge.classList.add('is-user');
@@ -31,6 +33,7 @@ export function initAuth({ state, onAuthChanged }) {
       if (logoutBtn) logoutBtn.hidden = true;
       if (communityNavLink) communityNavLink.hidden = true;
       if (aiNavLink) aiNavLink.hidden = true;
+      if (supportNavLink) supportNavLink.hidden = true;
       if (authBadge) {
         authBadge.textContent = 'Guest Mode';
         authBadge.classList.remove('is-user');
@@ -95,7 +98,12 @@ export function initAuth({ state, onAuthChanged }) {
     const form = event.currentTarget;
     const password = form.password.value || '';
     const totpCode = form.totpCode.value.trim() || '';
+    if (form.password?.setCustomValidity) form.password.setCustomValidity('');
     if (!password && !totpCode) {
+      if (form.password?.setCustomValidity) {
+        form.password.setCustomValidity('Enter password or TOTP code to login.');
+        form.password.reportValidity();
+      }
       setText('authStatus', 'Enter password or TOTP code to login.');
       return;
     }

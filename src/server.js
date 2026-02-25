@@ -50,7 +50,11 @@ const {
   deliveryJobStatusSchema,
   razorpayOrderSchema,
   feedbackCreateSchema,
-  feedbackListQuerySchema
+  feedbackListQuerySchema,
+  bannerQuerySchema,
+  bannerSchema,
+  bannerUpdateSchema,
+  locationGeocodeSchema
 } = require('./validators');
 
 function parseId(value) {
@@ -96,6 +100,15 @@ function titleCaseFromCode(value) {
   return String(value || '')
     .replaceAll('_', ' ')
     .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function slugifyAreaCode(value, fallback = 'unknown') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return normalized || fallback;
 }
 
 function normalizeRole(inputRole) {
@@ -945,6 +958,147 @@ function createApp(deps = {}) {
     }
   });
 
+  app.get('/api/banners', async (req, res) => {
+    try {
+      const filters = bannerQuerySchema.parse(req.query);
+      const data = typeof repository.listPublicBanners === 'function' ? await repository.listPublicBanners(filters) : [];
+      return res.json({ data, meta: { scope: filters.scope, limit: filters.limit, total: data.length } });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid query' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/banners/mine', requireAuth, async (req, res) => {
+    try {
+      const { isAdmin } = await resolveActorPermissions(req);
+      const limitRaw = Number(req.query.limit || 60);
+      const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(120, limitRaw)) : 60;
+      const data =
+        typeof repository.listBannersByActor === 'function'
+          ? await repository.listBannersByActor({ actorId: req.user.id, isAdmin, limit })
+          : [];
+      return res.json({ data, meta: { total: data.length, limit } });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/banners/upload', requireRole(['seller']), upload.single('file'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'file is required' });
+    if (!String(req.file.mimetype || '').startsWith('image/')) {
+      return res.status(400).json({ error: 'Only image files are supported' });
+    }
+    const key = `banners/${req.user.id}/${Date.now()}-${req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    try {
+      const uploaded = await uploadMediaFn({
+        buffer: req.file.buffer,
+        contentType: req.file.mimetype,
+        key
+      });
+      return res.json({ key: uploaded.key, url: uploaded.url, r2Enabled: r2EnabledFlag });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/banners', requireRole(['seller']), async (req, res) => {
+    try {
+      const body = bannerSchema.parse(req.body);
+      if (typeof repository.createBanner !== 'function') {
+        return res.status(500).json({ error: 'Banner API is not available' });
+      }
+      const banner = await repository.createBanner({
+        title: sanitizeText(body.title, 160),
+        message: sanitizeText(body.message || '', 500),
+        imageKey: String(body.imageKey || '').trim(),
+        imageUrl: String(body.imageUrl || '').trim(),
+        linkUrl: String(body.linkUrl || '/#marketplace').trim(),
+        buttonText: sanitizeText(body.buttonText || 'View', 40),
+        scope: body.scope,
+        isActive: Boolean(body.isActive),
+        priority: Number(body.priority || 0),
+        listingId: body.listingId || null,
+        createdBy: req.user.id,
+        createdByRole: req.user.role || 'seller'
+      });
+
+      await logProjectAction(req, {
+        actionType: 'banner.create',
+        entityType: 'banner',
+        entityId: banner?.id || null,
+        summary: 'Marketing banner created',
+        details: { scope: body.scope, source: 'manual' }
+      });
+
+      publishRealtimeEvent('banner.updated', { type: 'banner_created', bannerId: banner?.id || null });
+      return res.status(201).json(banner);
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put('/api/banners/:id', requireRole(['seller']), async (req, res) => {
+    const bannerId = parseId(req.params.id);
+    if (!bannerId) return res.status(400).json({ error: 'Invalid banner id' });
+    try {
+      const body = bannerUpdateSchema.parse(req.body);
+      const { isAdmin } = await resolveActorPermissions(req);
+      const patch = {};
+      if (Object.prototype.hasOwnProperty.call(body, 'title')) patch.title = sanitizeText(body.title, 160);
+      if (Object.prototype.hasOwnProperty.call(body, 'message')) patch.message = sanitizeText(body.message, 500);
+      if (Object.prototype.hasOwnProperty.call(body, 'imageKey')) patch.imageKey = String(body.imageKey || '').trim();
+      if (Object.prototype.hasOwnProperty.call(body, 'imageUrl')) patch.imageUrl = String(body.imageUrl || '').trim();
+      if (Object.prototype.hasOwnProperty.call(body, 'linkUrl')) patch.linkUrl = String(body.linkUrl || '').trim();
+      if (Object.prototype.hasOwnProperty.call(body, 'buttonText')) patch.buttonText = sanitizeText(body.buttonText, 40);
+      if (Object.prototype.hasOwnProperty.call(body, 'scope')) patch.scope = body.scope;
+      if (Object.prototype.hasOwnProperty.call(body, 'isActive')) patch.isActive = Boolean(body.isActive);
+      if (Object.prototype.hasOwnProperty.call(body, 'priority')) patch.priority = Number(body.priority || 0);
+
+      const updated = await repository.updateBanner({
+        bannerId,
+        actorId: req.user.id,
+        isAdmin,
+        patch
+      });
+      if (!updated) return res.status(404).json({ error: 'Banner not found or forbidden' });
+
+      await logProjectAction(req, {
+        actionType: 'banner.update',
+        entityType: 'banner',
+        entityId: bannerId,
+        summary: 'Marketing banner updated'
+      });
+      publishRealtimeEvent('banner.updated', { type: 'banner_updated', bannerId });
+      return res.json(updated);
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete('/api/banners/:id', requireRole(['seller']), async (req, res) => {
+    const bannerId = parseId(req.params.id);
+    if (!bannerId) return res.status(400).json({ error: 'Invalid banner id' });
+    try {
+      const { isAdmin } = await resolveActorPermissions(req);
+      const deleted = await repository.deleteBanner({ bannerId, actorId: req.user.id, isAdmin });
+      if (!deleted) return res.status(404).json({ error: 'Banner not found or forbidden' });
+
+      await logProjectAction(req, {
+        actionType: 'banner.delete',
+        entityType: 'banner',
+        entityId: bannerId,
+        summary: 'Marketing banner deleted'
+      });
+      publishRealtimeEvent('banner.updated', { type: 'banner_deleted', bannerId });
+      return res.json({ ok: true, deleted });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get('/api/push/public-key', (_, res) => {
     return res.json({
       publicKey: appConfig.push?.vapidPublicKey || ''
@@ -1122,6 +1276,36 @@ function createApp(deps = {}) {
     }
   });
 
+  app.get('/api/location/geocode', async (req, res) => {
+    try {
+      const { q } = locationGeocodeSchema.parse(req.query);
+      const response = await reverseGeocodeFetch(
+        `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(q)}`,
+        { headers: { 'User-Agent': 'kitaabpadho/2.0' } }
+      );
+      if (!response.ok) return res.status(502).json({ error: 'Geocode service unavailable' });
+      const rows = await response.json();
+      const first = Array.isArray(rows) ? rows[0] : null;
+      if (!first) return res.status(404).json({ error: 'Location not found' });
+      const lat = Number(first.lat);
+      const lon = Number(first.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        return res.status(502).json({ error: 'Invalid geocode response' });
+      }
+      const city = String(first.display_name || '').split(',')[0]?.trim() || '';
+      return res.json({
+        lat,
+        lon,
+        address: first.display_name || q,
+        city,
+        areaCode: slugifyAreaCode(city || q)
+      });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid query' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get('/api/listings', async (req, res) => {
     try {
       const parsed = listingQuerySchema.parse(req.query);
@@ -1161,7 +1345,10 @@ function createApp(deps = {}) {
   app.post('/api/listings', listingWriteLimiter, requireRole(['seller']), async (req, res) => {
     try {
       const body = listingSchema.parse(req.body);
-      const serviceableAreaCodes = [...new Set((body.serviceableAreaCodes || []).map((item) => String(item || '').trim()))];
+      const baseAreaCode = slugifyAreaCode(body.areaCode || body.city || 'unknown');
+      const serviceableAreaCodes = [
+        ...new Set((body.serviceableAreaCodes || []).map((item) => slugifyAreaCode(item, '')).filter(Boolean))
+      ];
       const serviceableCities = [
         ...new Set((body.serviceableCities || []).map((item) => sanitizeText(String(item || ''), 100)).filter(Boolean))
       ];
@@ -1170,8 +1357,10 @@ function createApp(deps = {}) {
         title: body.title.trim(),
         description: body.description.trim(),
         city: body.city.trim(),
+        areaCode: baseAreaCode,
         serviceableAreaCodes,
         serviceableCities,
+        publishIndia: Boolean(body.publishIndia),
         createdBy: req.user.id
       });
       await logProjectAction(req, {
@@ -1186,7 +1375,8 @@ function createApp(deps = {}) {
           serviceableAreaCodes: listing.serviceableAreaCodes || [],
           serviceableCities: listing.serviceableCities || [],
           sellerType: listing.sellerType,
-          deliveryMode: listing.deliveryMode
+          deliveryMode: listing.deliveryMode,
+          publishIndia: Boolean(listing.publishIndia)
         }
       });
       if (typeof repository.notifyAllUsersAboutListing === 'function') {
@@ -1212,6 +1402,18 @@ function createApp(deps = {}) {
           url: `${appConfig.appBaseUrl}/#marketplace`
         });
       }
+
+      await repository
+        .upsertAutoBannerForListing?.({
+          listingId: listing.id,
+          title: listing.title,
+          city: listing.city,
+          listingType: listing.listingType,
+          publishIndia: Boolean(listing.publishIndia),
+          createdBy: req.user.id,
+          createdByRole: req.user.role || 'seller'
+        })
+        .catch(() => null);
 
       let deliveryJob = null;
       if (listing.deliveryMode === 'peer_to_peer' && typeof repository.createDeliveryJob === 'function') {
@@ -1275,7 +1477,10 @@ function createApp(deps = {}) {
       }
 
       const body = listingUpdateSchema.parse(req.body);
-      const serviceableAreaCodes = [...new Set((body.serviceableAreaCodes || []).map((item) => String(item || '').trim()))];
+      const normalizedAreaCode = slugifyAreaCode(body.areaCode || body.city || existing.areaCode || 'unknown');
+      const serviceableAreaCodes = [
+        ...new Set((body.serviceableAreaCodes || []).map((item) => slugifyAreaCode(item, '')).filter(Boolean))
+      ];
       const serviceableCities = [
         ...new Set((body.serviceableCities || []).map((item) => sanitizeText(String(item || ''), 100)).filter(Boolean))
       ];
@@ -1292,9 +1497,10 @@ function createApp(deps = {}) {
         paymentModes: body.paymentModes,
         price: Number(body.price),
         city: sanitizeText(body.city, 100),
-        areaCode: body.areaCode,
+        areaCode: normalizedAreaCode,
         serviceableAreaCodes,
         serviceableCities,
+        publishIndia: Boolean(body.publishIndia),
         latitude: Number(body.latitude),
         longitude: Number(body.longitude)
       });
@@ -1312,9 +1518,22 @@ function createApp(deps = {}) {
           serviceableAreaCodes: updated.serviceableAreaCodes || [],
           serviceableCities: updated.serviceableCities || [],
           sellerType: updated.sellerType,
-          deliveryMode: updated.deliveryMode
+          deliveryMode: updated.deliveryMode,
+          publishIndia: Boolean(updated.publishIndia)
         }
       });
+
+      await repository
+        .upsertAutoBannerForListing?.({
+          listingId,
+          title: updated.title,
+          city: updated.city,
+          listingType: updated.listingType,
+          publishIndia: Boolean(updated.publishIndia),
+          createdBy: updated.createdBy,
+          createdByRole: req.user.role || 'seller'
+        })
+        .catch(() => null);
 
       publishRealtimeEvent('listing.updated', { id: listingId });
       publishRealtimeEvent('notifications.invalidate', { source: 'listing.update' });
@@ -1402,6 +1621,22 @@ function createApp(deps = {}) {
         url: uploaded.url,
         mediaType: req.file.mimetype
       });
+      const listingForBanner = await repository.getListingById(listingId).catch(() => null);
+      if (listingForBanner) {
+        await repository
+          .upsertAutoBannerForListing?.({
+            listingId,
+            title: listingForBanner.title,
+            city: listingForBanner.city,
+            listingType: listingForBanner.listingType,
+            imageKey: uploaded.key,
+            imageUrl: uploaded.url,
+            publishIndia: Boolean(listingForBanner.publishIndia),
+            createdBy: listingForBanner.createdBy,
+            createdByRole: req.user.role || 'seller'
+          })
+          .catch(() => null);
+      }
       await logProjectAction(req, {
         actionType: 'listing.media_upload',
         entityType: 'listing',

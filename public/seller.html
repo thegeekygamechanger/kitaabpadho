@@ -1,12 +1,12 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#1f6fe5" />
-    <title>📚 Seller Portal | KitaabPadho</title>
+    <title>&#x1F4DA; Seller Portal | KitaabPadho</title>
     <link rel="icon" type="image/svg+xml" href="/assets/icons/bookish.svg" />
-    <link rel="stylesheet" href="/assets/css/app.css?v=20260225c" />
+    <link rel="stylesheet" href="/assets/css/app.css?v=20260226a" />
   </head>
   <body>
     <header class="kb-header">
@@ -24,13 +24,19 @@
           <button id="sellerLogoutBtn" class="kb-btn kb-btn-dark" type="button">Logout</button>
         </div>
       </div>
+      <nav class="kb-nav">
+        <a id="sellerWorkspaceNav" class="active" href="#sellerPostingPanel">Seller Workspace</a>
+        <a id="sellerBannerNav" href="#sellerBannerPanel">Banners</a>
+        <a id="sellerSupportNav" href="#sellerSupportPanel">Customer Service</a>
+        <span id="sellerAuthBadge" class="kb-badge">Guest</span>
+      </nav>
     </header>
 
     <main class="kb-main">
       <section id="sellerLoginPanel" class="panel">
         <div class="panel-head">
           <h2>Seller Login</h2>
-          <p id="sellerAuthBadge" class="muted">Guest</p>
+          <p class="muted">Login once. Session stays active until logout/password update.</p>
         </div>
         <div class="auth-grid">
           <form id="sellerLoginForm" class="drawer">
@@ -85,34 +91,27 @@
               <option value="kpi_dedicated">KPI Dedicated</option>
             </select>
             <input name="price" class="kb-input" type="number" min="0" step="0.01" placeholder="Price" required />
-            <select name="areaCode" class="kb-select">
-              <option value="other">Other</option>
-              <option value="loni_kalbhor">Loni Kalbhor</option>
-              <option value="hadapsar">Hadapsar</option>
-              <option value="camp">Camp</option>
+            <select id="sellerServiceLocation" name="serviceLocation" class="kb-select" required>
+              <option value="">Use GPS to load serviceable localities</option>
             </select>
-            <input id="sellerCitySearchInput" name="cityQuery" class="kb-input" placeholder="Search city/locality" />
-            <button id="sellerCitySearchBtn" class="kb-btn kb-btn-ghost" type="button">Search City</button>
             <select id="sellerCitySelect" name="city" class="kb-select" required>
               <option value="">Select city</option>
             </select>
-            <input name="latitude" class="kb-input" type="number" step="any" placeholder="Latitude" required />
-            <input name="longitude" class="kb-input" type="number" step="any" placeholder="Longitude" required />
+            <input name="areaCode" class="kb-input" placeholder="Area code auto-detected" readonly required />
+            <input name="latitude" class="kb-input" type="number" step="any" placeholder="Latitude auto-detected" required />
+            <input name="longitude" class="kb-input" type="number" step="any" placeholder="Longitude auto-detected" required />
             <button id="sellerDetectGpsBtn" class="kb-btn kb-btn-ghost" type="button">Use GPS</button>
           </div>
           <div class="drawer">
             <h4>Serviceable Areas (up to 250 km)</h4>
-            <div class="serviceable-area-grid">
-              <label><input type="checkbox" name="serviceableAreaCodes" value="loni_kalbhor" /> Loni Kalbhor</label>
-              <label><input type="checkbox" name="serviceableAreaCodes" value="hadapsar" /> Hadapsar</label>
-              <label><input type="checkbox" name="serviceableAreaCodes" value="camp" /> Camp</label>
-              <label><input type="checkbox" name="serviceableAreaCodes" value="other" /> Other</label>
-            </div>
+            <div id="sellerServiceableAreaList" class="serviceable-area-grid"></div>
             <input
               name="serviceableCities"
               class="kb-input"
-              placeholder="Nearby serviceable cities (comma separated)"
+              placeholder="Nearby serviceable city list auto-filled from GPS"
+              readonly
             />
+            <label><input type="checkbox" name="publishIndia" value="true" /> Publish in India marketplace also</label>
           </div>
           <div class="payment-modes">
             <label><input type="checkbox" name="paymentModes" value="cod" checked /> Cash on Delivery</label>
@@ -138,7 +137,34 @@
         <div id="sellerListings" class="cards"></div>
       </section>
 
-      <section class="panel">
+      <section id="sellerBannerPanel" class="panel hidden">
+        <div class="panel-head">
+          <h2>Banner Manager</h2>
+          <button id="sellerBannerRefreshBtn" class="kb-btn kb-btn-ghost" type="button">Refresh</button>
+        </div>
+        <form id="sellerBannerForm" class="drawer">
+          <input name="title" class="kb-input" placeholder="Banner title" required />
+          <textarea name="message" class="kb-textarea" placeholder="Banner text"></textarea>
+          <input name="linkUrl" class="kb-input" placeholder="Redirect URL (e.g. /#marketplace or full URL)" />
+          <input name="buttonText" class="kb-input" placeholder="Button text (e.g. Shop Now)" />
+          <select name="scope" class="kb-select">
+            <option value="local">Local</option>
+            <option value="india">India</option>
+            <option value="all">All</option>
+          </select>
+          <input name="priority" class="kb-input" type="number" value="0" />
+          <label class="file-pick">
+            <span>Banner image</span>
+            <input name="image" type="file" accept="image/*" />
+          </label>
+          <label><input name="isActive" type="checkbox" checked /> Active</label>
+          <button class="kb-btn kb-btn-primary" type="submit">Publish Banner</button>
+          <p id="sellerBannerStatus" class="muted"></p>
+        </form>
+        <div id="sellerBannerList" class="cards"></div>
+      </section>
+
+      <section id="sellerSupportPanel" class="panel">
         <div class="panel-head">
           <h2>Customer Service Query</h2>
           <button id="sellerSupportRefreshBtn" class="kb-btn kb-btn-ghost" type="button">Refresh</button>
@@ -162,6 +188,7 @@
       <p>Made by UPSC aspirant. Built for learners across India. KitaabPadhoIndia. @2026 copyright</p>
     </footer>
 
-    <script type="module" src="/assets/js/seller.js?v=20260225c"></script>
+    <script type="module" src="/assets/js/seller.js?v=20260226a"></script>
   </body>
 </html>
+

@@ -8,7 +8,7 @@ function safeJsonParse(value) {
   }
 }
 
-export function initRealtime({ state, marketplace, community, notifications, feedback }) {
+export function initRealtime({ state, marketplace, banners, community, notifications, feedback }) {
   let source = null;
   const timers = new Map();
 
@@ -31,18 +31,25 @@ export function initRealtime({ state, marketplace, community, notifications, fee
   function bindEvents(nextSource) {
     nextSource.addEventListener('listing.created', () => {
       debounceRefresh('listings', () => marketplace.refreshListings());
+      debounceRefresh('banners', () => banners?.refresh?.());
       debounceRefresh('notifications', () => notifications.refresh());
       playNotificationSound();
     });
 
     nextSource.addEventListener('listing.updated', () => {
       debounceRefresh('listings', () => marketplace.refreshListings());
+      debounceRefresh('banners', () => banners?.refresh?.());
       debounceRefresh('notifications', () => notifications.refresh());
     });
 
     nextSource.addEventListener('listing.deleted', () => {
       debounceRefresh('listings', () => marketplace.refreshListings());
+      debounceRefresh('banners', () => banners?.refresh?.());
       debounceRefresh('notifications', () => notifications.refresh());
+    });
+
+    nextSource.addEventListener('banner.updated', () => {
+      debounceRefresh('banners', () => banners?.refresh?.());
     });
 
     nextSource.addEventListener('community.updated', () => {

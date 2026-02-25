@@ -310,6 +310,94 @@ body {
   margin: 0 0 0.5rem;
 }
 
+.promo-wrap {
+  overflow: hidden;
+}
+
+.promo-banners {
+  position: relative;
+  min-height: 170px;
+}
+
+.promo-banner {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) 1fr;
+  gap: 0.7rem;
+  align-items: stretch;
+  text-decoration: none;
+  color: inherit;
+  border: 1px solid #d7e4ff;
+  border-radius: 14px;
+  padding: 0.65rem;
+  background: linear-gradient(110deg, #eff5ff, #fff8d8 70%, #eef6ff);
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  transition: opacity 320ms ease, transform 320ms ease;
+}
+
+.promo-banner.is-active {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.promo-banner.empty {
+  position: relative;
+  opacity: 1;
+  transform: none;
+  display: block;
+  pointer-events: auto;
+}
+
+.promo-banner-image {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #c8dbff;
+  min-height: 150px;
+  background: linear-gradient(120deg, #dfeaff, #fff4c7);
+}
+
+.promo-banner-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.promo-banner-copy {
+  display: grid;
+  gap: 0.35rem;
+  align-content: center;
+}
+
+.promo-banner-copy h3 {
+  margin: 0;
+}
+
+.promo-banner-copy p {
+  margin: 0;
+  color: #2e4567;
+}
+
+.promo-banner-kicker {
+  font-size: 0.75rem;
+  color: #21539f;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.promo-banner-cta {
+  display: inline-flex;
+  width: fit-content;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: #1647a4;
+  color: #fff;
+  font-weight: 700;
+}
+
 .panel {
   background: var(--card);
   border-radius: var(--radius);
@@ -626,6 +714,11 @@ body {
   position: relative;
 }
 
+.auth-modal-card {
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
 .modal-card.wide {
   width: min(920px, 96vw);
 }
@@ -754,6 +847,26 @@ body {
   border: 1px solid #d5e3ff;
   border-radius: 10px;
   background: #f8fbff;
+}
+
+.field-label {
+  font-size: 0.8rem;
+  color: #2a4d8e;
+  font-weight: 700;
+  margin-top: 0.2rem;
+}
+
+.field-error {
+  min-height: 0.9rem;
+  display: block;
+  color: #bf2c44;
+  font-size: 0.75rem;
+  margin-top: 0.15rem;
+}
+
+.field-invalid {
+  border-color: #cf4560 !important;
+  box-shadow: 0 0 0 3px rgba(207, 69, 96, 0.15) !important;
 }
 
 .muted {
@@ -952,6 +1065,10 @@ body {
 
 @media (max-width: 780px) {
   .hero {
+    grid-template-columns: 1fr;
+  }
+
+  .promo-banner {
     grid-template-columns: 1fr;
   }
 

@@ -23,9 +23,10 @@ CREATE TABLE IF NOT EXISTS listings (
   payment_modes TEXT[] NOT NULL DEFAULT ARRAY['cod']::TEXT[],
   price NUMERIC(10,2) NOT NULL DEFAULT 0,
   city TEXT NOT NULL,
-  area_code TEXT NOT NULL DEFAULT 'other' CHECK (area_code IN ('loni_kalbhor','hadapsar','camp','other')),
+  area_code TEXT NOT NULL DEFAULT '',
   serviceable_area_codes TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
   serviceable_cities TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  publish_india BOOLEAN NOT NULL DEFAULT FALSE,
   latitude DOUBLE PRECISION NOT NULL,
   longitude DOUBLE PRECISION NOT NULL,
   created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
@@ -111,7 +112,7 @@ CREATE TABLE IF NOT EXISTS delivery_jobs (
   id BIGSERIAL PRIMARY KEY,
   listing_id BIGINT NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
   pickup_city TEXT NOT NULL,
-  pickup_area_code TEXT NOT NULL DEFAULT 'other',
+  pickup_area_code TEXT NOT NULL DEFAULT '',
   pickup_latitude DOUBLE PRECISION,
   pickup_longitude DOUBLE PRECISION,
   delivery_mode TEXT NOT NULL,
@@ -152,9 +153,29 @@ CREATE TABLE IF NOT EXISTS customer_feedback (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS marketing_banners (
+  id BIGSERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL DEFAULT '',
+  image_key TEXT NOT NULL DEFAULT '',
+  image_url TEXT NOT NULL DEFAULT '',
+  link_url TEXT NOT NULL DEFAULT '/#marketplace',
+  button_text TEXT NOT NULL DEFAULT 'View',
+  scope TEXT NOT NULL DEFAULT 'local' CHECK (scope IN ('local','india','all')),
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  priority INT NOT NULL DEFAULT 0,
+  source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual','listing_auto')),
+  listing_id BIGINT REFERENCES listings(id) ON DELETE CASCADE,
+  created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  created_by_role TEXT NOT NULL DEFAULT 'seller',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_listings_geo ON listings (latitude, longitude);
 CREATE INDEX IF NOT EXISTS idx_listings_created_at ON listings (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_listings_filters ON listings (listing_type, category, area_code);
+CREATE INDEX IF NOT EXISTS idx_listings_publish_india ON listings (publish_india, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_listings_serviceable_areas ON listings USING GIN (serviceable_area_codes);
 CREATE INDEX IF NOT EXISTS idx_listings_serviceable_cities ON listings USING GIN (serviceable_cities);
 CREATE INDEX IF NOT EXISTS idx_media_listing_id ON media_assets (listing_id);
@@ -172,6 +193,8 @@ CREATE INDEX IF NOT EXISTS idx_delivery_jobs_status_created ON delivery_jobs (st
 CREATE INDEX IF NOT EXISTS idx_delivery_jobs_geo ON delivery_jobs (pickup_latitude, pickup_longitude);
 CREATE INDEX IF NOT EXISTS idx_customer_feedback_user_created ON customer_feedback (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_customer_feedback_created ON customer_feedback (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_marketing_banners_scope_active ON marketing_banners (scope, is_active, priority DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_marketing_banners_listing ON marketing_banners (listing_id);
 
 INSERT INTO community_categories (slug, name, description)
 VALUES

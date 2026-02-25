@@ -1,7 +1,9 @@
 import { initAi } from './ai.js';
 import { initAuth } from './auth.js';
+import { initBanners } from './banners.js';
 import { initCommunity } from './community.js';
 import { initFeedback } from './feedback.js';
+import { initFormEnhancements } from './forms.js';
 import { initLocation } from './location.js';
 import { initMarketplace } from './marketplace.js';
 import { initNotifications } from './notifications.js';
@@ -22,9 +24,10 @@ function wireModalDismiss() {
 }
 
 function boot() {
+  initFormEnhancements();
   let auth;
-  const viewIds = ['marketplace', 'community', 'ai', 'notificationsPanel', 'profilePanel'];
-  const gatedGuestViews = ['community', 'ai', 'notificationsPanel', 'profilePanel'];
+  const viewIds = ['marketplace', 'community', 'ai', 'notificationsPanel', 'profilePanel', 'supportPanel'];
+  const gatedGuestViews = ['community', 'ai', 'notificationsPanel', 'profilePanel', 'supportPanel'];
   const guestPromptSessionKey = 'kp_guest_login_prompt_v1';
   let guestPromptBound = false;
 
@@ -90,6 +93,7 @@ function boot() {
   }
 
   const marketplace = initMarketplace({ state });
+  const banners = initBanners({ state });
 
   const community = initCommunity({
     state,
@@ -123,6 +127,7 @@ function boot() {
   const realtime = initRealtime({
     state,
     marketplace,
+    banners,
     community,
     notifications,
     feedback
@@ -134,6 +139,7 @@ function boot() {
       if (!state.user && !state.marketplace.category) state.marketplace.category = 'stationery';
       await Promise.all([
         marketplace.refreshListings(),
+        banners.refresh(),
         state.user ? community.loadCategories().then(() => community.refreshPosts()) : Promise.resolve(),
         profile.onAuthChanged(),
         notifications.onAuthChanged(),
@@ -155,6 +161,9 @@ function boot() {
       marketplace.setAreaCode(areaCode);
       marketplace.setCityFromArea(city);
       await marketplace.refreshListings();
+    },
+    onGeoOptionsChanged: ({ nearbyCities, localityOptions }) => {
+      marketplace.setGeoFilterOptions({ nearbyCities, localityOptions });
     }
   });
 
@@ -175,6 +184,12 @@ function boot() {
     document.getElementById('marketplace')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 
+  document.querySelectorAll('#listingScopeTabs .tab-btn').forEach((button) => {
+    button.addEventListener('click', () => {
+      banners.refresh().catch(() => null);
+    });
+  });
+
   Promise.all([auth.refreshUser()])
     .catch(() => null)
     .finally(async () => {
@@ -184,6 +199,7 @@ function boot() {
       }
       await Promise.all([
         marketplace.refreshListings(),
+        banners.refresh(),
         state.user ? community.refreshPosts() : Promise.resolve(),
         profile.refreshUser(),
         notifications.refresh(),

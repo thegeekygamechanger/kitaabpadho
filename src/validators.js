@@ -2,19 +2,23 @@ const { z } = require('zod');
 
 const categories = ['book', 'instrument', 'notes', 'video', 'pdf', 'stationery', 'stationary'];
 const listingTypes = ['rent', 'buy', 'sell'];
-const areaCodes = ['loni_kalbhor', 'hadapsar', 'camp', 'other'];
+const areaCodes = ['all'];
 const accountRoles = ['student', 'seller', 'delivery'];
 const sellerTypes = ['student', 'library', 'reseller', 'wholesaler', 'college', 'individual_seller', 'shop'];
 const deliveryModes = ['peer_to_peer', 'seller_dedicated', 'kpi_dedicated'];
 const paymentModes = ['cod', 'upi', 'card', 'razorpay'];
+const listingScopes = ['local', 'india', 'all'];
+const bannerScopes = ['local', 'india', 'all'];
 
 const categoryEnum = z.enum(categories);
 const listingTypeEnum = z.enum(listingTypes);
-const areaCodeEnum = z.enum(areaCodes);
 const accountRoleEnum = z.enum(accountRoles);
 const sellerTypeEnum = z.enum(sellerTypes);
 const deliveryModeEnum = z.enum(deliveryModes);
 const paymentModeEnum = z.enum(paymentModes);
+const listingScopeEnum = z.enum(listingScopes);
+const bannerScopeEnum = z.enum(bannerScopes);
+const areaCodeSchema = z.string().trim().min(2).max(80).regex(/^[a-z0-9_-]+$/);
 
 const optionalNumber = (schema) =>
   z.preprocess((value) => {
@@ -35,9 +39,10 @@ const listingSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   city: z.string().trim().min(2).max(100).optional().default('Unknown'),
-  areaCode: areaCodeEnum.optional().default('other'),
-  serviceableAreaCodes: z.array(areaCodeEnum).max(20).optional().default([]),
-  serviceableCities: z.array(z.string().trim().min(2).max(100)).max(30).optional().default([])
+  areaCode: areaCodeSchema.optional().default('unknown'),
+  serviceableAreaCodes: z.array(areaCodeSchema).max(20).optional().default([]),
+  serviceableCities: z.array(z.string().trim().min(2).max(100)).max(30).optional().default([]),
+  publishIndia: z.boolean().optional().default(false)
 });
 const listingUpdateSchema = listingSchema;
 
@@ -47,7 +52,8 @@ const listingQuerySchema = z.object({
   listingType: listingTypeEnum.optional(),
   sellerType: sellerTypeEnum.optional(),
   city: z.string().trim().min(1).max(100).optional(),
-  areaCode: z.union([areaCodeEnum, z.literal('all')]).optional(),
+  areaCode: z.union([areaCodeSchema, z.literal('all')]).optional(),
+  scope: listingScopeEnum.optional().default('local'),
   lat: optionalNumber(z.number().min(-90).max(90)),
   lon: optionalNumber(z.number().min(-180).max(180)),
   radiusKm: optionalNumber(z.number().min(1).max(500)),
@@ -211,6 +217,34 @@ const feedbackListQuerySchema = z.object({
   limit: optionalNumber(z.number().int().min(1).max(100)).default(20),
   offset: optionalNumber(z.number().int().min(0).max(10000)).default(0)
 });
+
+const bannerQuerySchema = z.object({
+  scope: bannerScopeEnum.optional().default('local'),
+  limit: optionalNumber(z.number().int().min(1).max(30)).default(10)
+});
+
+const bannerSchema = z.object({
+  title: z.string().trim().min(3).max(160),
+  message: z.string().trim().min(3).max(500).optional().default(''),
+  imageKey: z.string().trim().max(500).optional().default(''),
+  imageUrl: z.string().trim().url().max(2000).optional().default(''),
+  linkUrl: z.string().trim().min(1).max(2000).optional().default('/#marketplace'),
+  buttonText: z.string().trim().min(1).max(40).optional().default('View'),
+  scope: bannerScopeEnum.optional().default('local'),
+  isActive: z.boolean().optional().default(true),
+  priority: z.number().int().min(-100).max(100).optional().default(0),
+  listingId: optionalNumber(z.number().int().positive())
+});
+
+const bannerUpdateSchema = bannerSchema.partial().refine((payload) => Object.keys(payload).length > 0, {
+  message: 'At least one field is required',
+  path: ['title']
+});
+
+const locationGeocodeSchema = z.object({
+  q: z.string().trim().min(2).max(180)
+});
+
 const deliveryJobStatusSchema = z.object({
   status: z.enum(['open', 'claimed', 'completed', 'cancelled'])
 });
@@ -228,6 +262,8 @@ module.exports = {
   sellerTypes,
   deliveryModes,
   paymentModes,
+  listingScopes,
+  bannerScopes,
   listingSchema,
   listingUpdateSchema,
   listingQuerySchema,
@@ -254,5 +290,9 @@ module.exports = {
   deliveryJobStatusSchema,
   razorpayOrderSchema,
   feedbackCreateSchema,
-  feedbackListQuerySchema
+  feedbackListQuerySchema,
+  bannerQuerySchema,
+  bannerSchema,
+  bannerUpdateSchema,
+  locationGeocodeSchema
 };

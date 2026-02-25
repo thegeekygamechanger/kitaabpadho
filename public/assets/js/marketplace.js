@@ -18,16 +18,35 @@ function primaryActionLabel(type) {
   return type === 'rent' ? 'Rent Now' : 'Buy Now';
 }
 
+function asUniqueLocationOptions({ nearbyCities = [], localityOptions = [] } = {}) {
+  const options = [];
+  const pushUnique = (value) => {
+    const normalized = String(value || '').trim();
+    if (!normalized) return;
+    if (options.some((item) => item.toLowerCase() === normalized.toLowerCase())) return;
+    options.push(normalized);
+  };
+  nearbyCities.forEach((item) => pushUnique(item.city || item.name));
+  localityOptions.forEach((item) => {
+    pushUnique(item.name);
+    pushUnique(item.filterCity);
+    pushUnique(item.city);
+  });
+  return options.slice(0, 40);
+}
+
 export function initMarketplace({ state }) {
   const listingsGrid = el('listingsGrid');
   const categoryFilter = el('categoryFilter');
   const sellerTypeFilter = el('sellerTypeFilter');
   const cityFilter = el('cityFilter');
   const sortFilter = el('sortFilter');
+  const scopeTabsRoot = el('listingScopeTabs');
   const applyListingFiltersBtn = el('applyListingFiltersBtn');
   const closeListingDetailBtn = el('closeListingDetailBtn');
   const listingDetailContent = el('listingDetailContent');
   let currentListing = null;
+  let geoCityOptions = [];
 
   function canManageListing(listing) {
     if (!state.user || !listing) return false;
@@ -35,6 +54,7 @@ export function initMarketplace({ state }) {
   }
 
   function filtersFromState() {
+    const scope = state.marketplace.scope || 'local';
     const filters = {
       q: state.marketplace.q,
       category: state.marketplace.category,
@@ -42,11 +62,12 @@ export function initMarketplace({ state }) {
       listingType: state.marketplace.listingType,
       city: state.marketplace.city,
       areaCode: state.location.areaCode,
+      scope,
       sort: state.marketplace.sort,
       limit: state.marketplace.limit,
       offset: state.marketplace.offset
     };
-    if (state.location.coords) {
+    if (scope === 'local' && state.location.coords) {
       filters.lat = state.location.coords.lat;
       filters.lon = state.location.coords.lon;
       filters.radiusKm = state.location.radiusKm || 250;
@@ -57,20 +78,43 @@ export function initMarketplace({ state }) {
   function syncFiltersFromControls() {
     state.marketplace.category = categoryFilter?.value || '';
     state.marketplace.sellerType = sellerTypeFilter?.value || '';
-    state.marketplace.city = cityFilter?.value.trim() || '';
+    state.marketplace.city = cityFilter?.value || '';
     state.marketplace.sort = sortFilter?.value || 'newest';
+  }
+
+  function renderCityFilterOptions() {
+    if (!cityFilter) return;
+    const selected = state.marketplace.city || '';
+    cityFilter.innerHTML = `<option value="">Nearby Cities & Localities</option>${geoCityOptions
+      .map((city) => `<option value="${escapeHtml(city)}">${escapeHtml(city)}</option>`)
+      .join('')}`;
+    if (!geoCityOptions.length) {
+      cityFilter.innerHTML = '<option value="">Use GPS to load nearby city/locality</option>';
+      state.marketplace.city = '';
+      return;
+    }
+    const hasSelected = geoCityOptions.some((item) => item.toLowerCase() === selected.toLowerCase());
+    cityFilter.value = hasSelected ? selected : '';
   }
 
   function syncControlsFromState() {
     if (categoryFilter) categoryFilter.value = state.marketplace.category;
     if (sellerTypeFilter) sellerTypeFilter.value = state.marketplace.sellerType;
-    if (cityFilter) cityFilter.value = state.marketplace.city;
     if (sortFilter) sortFilter.value = state.marketplace.sort;
+    renderCityFilterOptions();
+    syncScopeTabs();
   }
 
   function syncListingTypeTabs() {
     document.querySelectorAll('#listingTypeTabs .tab-btn').forEach((button) => {
       const active = button.dataset.type === state.marketplace.listingType;
+      button.classList.toggle('active', active);
+    });
+  }
+
+  function syncScopeTabs() {
+    document.querySelectorAll('#listingScopeTabs .tab-btn').forEach((button) => {
+      const active = button.dataset.scope === (state.marketplace.scope || 'local');
       button.classList.toggle('active', active);
     });
   }
@@ -83,15 +127,17 @@ export function initMarketplace({ state }) {
     listingsGrid.innerHTML = items
       .map((item) => {
         const media = Array.isArray(item.media) ? item.media : [];
-        const area = item.areaCode ? item.areaCode.replaceAll('_', ' ') : 'other';
+        const area = item.areaCode ? item.areaCode.replaceAll('_', ' ') : 'unknown';
         const distanceLabel =
           typeof item.distanceKm === 'number' ? `<span>${Number(item.distanceKm).toFixed(1)} km away</span>` : '';
+        const indiaBadge = item.publishIndia ? `<span class="pill type-sell">India</span>` : '';
         return `<article class="card">
           ${mediaPreview(media)}
           <div class="card-body">
             <div class="card-meta">
               <span class="pill ${listingTypeClass(item.listingType)}">${escapeHtml(item.listingType)}</span>
               <span class="pill type-buy">${escapeHtml(item.sellerType || 'student')}</span>
+              ${indiaBadge}
               <span class="muted">${escapeHtml(area)}</span>
               ${distanceLabel}
             </div>
@@ -135,9 +181,11 @@ export function initMarketplace({ state }) {
       const chips = [
         `<span class="pill ${listingTypeClass(listing.listingType)}">${escapeHtml(listing.listingType || 'buy')}</span>`,
         `<span class="pill type-buy">${escapeHtml(listing.category || 'stationery')}</span>`,
-        `<span class="pill type-rent">${escapeHtml(listing.sellerType || 'student')}</span>`
+        `<span class="pill type-rent">${escapeHtml(listing.sellerType || 'student')}</span>`,
+        listing.publishIndia ? `<span class="pill type-sell">India</span>` : ''
       ].join('');
-      const paymentText = Array.isArray(listing.paymentModes) && listing.paymentModes.length ? listing.paymentModes.join(', ') : 'cod';
+      const paymentText =
+        Array.isArray(listing.paymentModes) && listing.paymentModes.length ? listing.paymentModes.join(', ') : 'cod';
 
       listingDetailContent.innerHTML = `
         <article class="listing-detail">
@@ -170,7 +218,7 @@ export function initMarketplace({ state }) {
             <p class="listing-detail-price">${formatInr(listing.price)}</p>
             <p class="muted">Seller: ${escapeHtml(listing.ownerName || 'Student')} ${listing.ownerEmail ? `(${escapeHtml(listing.ownerEmail)})` : ''}</p>
             <p class="muted">Location: ${escapeHtml(listing.city || 'Unknown')} | ${escapeHtml(
-              (listing.areaCode || 'other').replaceAll('_', ' ')
+              (listing.areaCode || 'unknown').replaceAll('_', ' ')
             )}</p>
             <p class="muted">Serviceable Areas: ${escapeHtml((listing.serviceableAreaCodes || []).join(', ') || '-')}</p>
             <p class="muted">Serviceable Cities: ${escapeHtml((listing.serviceableCities || []).join(', ') || '-')}</p>
@@ -210,10 +258,27 @@ export function initMarketplace({ state }) {
     refreshListings();
   });
 
+  cityFilter?.addEventListener('change', () => {
+    syncFiltersFromControls();
+    refreshListings();
+  });
+
   document.querySelectorAll('#listingTypeTabs .tab-btn').forEach((button) => {
     button.addEventListener('click', () => {
       state.marketplace.listingType = button.dataset.type || 'buy';
       syncListingTypeTabs();
+      refreshListings();
+    });
+  });
+
+  scopeTabsRoot?.querySelectorAll('.tab-btn').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.marketplace.scope = button.dataset.scope || 'local';
+      if (state.marketplace.scope === 'india') {
+        state.marketplace.city = '';
+        state.location.areaCode = 'all';
+      }
+      syncControlsFromState();
       refreshListings();
     });
   });
@@ -296,12 +361,18 @@ export function initMarketplace({ state }) {
           listingType: currentListing.listingType,
           sellerType: currentListing.sellerType || 'student',
           deliveryMode: currentListing.deliveryMode || 'peer_to_peer',
-          paymentModes: Array.isArray(currentListing.paymentModes) && currentListing.paymentModes.length ? currentListing.paymentModes : ['cod'],
+          paymentModes:
+            Array.isArray(currentListing.paymentModes) && currentListing.paymentModes.length
+              ? currentListing.paymentModes
+              : ['cod'],
           price: nextPrice,
           city: nextCity.trim() || currentListing.city || 'Unknown',
-          areaCode: currentListing.areaCode || 'other',
-          serviceableAreaCodes: Array.isArray(currentListing.serviceableAreaCodes) ? currentListing.serviceableAreaCodes : [],
+          areaCode: currentListing.areaCode || 'unknown',
+          serviceableAreaCodes: Array.isArray(currentListing.serviceableAreaCodes)
+            ? currentListing.serviceableAreaCodes
+            : [],
           serviceableCities: Array.isArray(currentListing.serviceableCities) ? currentListing.serviceableCities : [],
+          publishIndia: Boolean(currentListing.publishIndia),
           latitude: Number(currentListing.latitude),
           longitude: Number(currentListing.longitude)
         });
@@ -339,14 +410,23 @@ export function initMarketplace({ state }) {
 
   return {
     refreshListings,
+    setGeoFilterOptions(geoOptions) {
+      geoCityOptions = asUniqueLocationOptions(geoOptions);
+      renderCityFilterOptions();
+    },
     setSearchQuery(query) {
       state.marketplace.q = query;
     },
     setAreaCode(areaCode) {
+      if (state.marketplace.scope === 'india') return;
       state.location.areaCode = areaCode;
     },
     setCityFromArea(cityName) {
-      state.marketplace.city = cityName || '';
+      if (state.marketplace.scope === 'india') {
+        state.marketplace.city = '';
+      } else {
+        state.marketplace.city = cityName || '';
+      }
       syncControlsFromState();
     },
     onLocationChanged(coords) {

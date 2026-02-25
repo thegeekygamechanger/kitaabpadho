@@ -65,6 +65,7 @@ export const api = {
   pushUnsubscribe: (endpoint) => apiRequest('/api/push/unsubscribe', { method: 'POST', body: { endpoint } }),
   listAreas: () => apiRequest('/api/areas'),
   locationNearby: (lat, lon) => apiRequest(`/api/location/nearby?lat=${lat}&lon=${lon}`),
+  locationGeocode: (q) => apiRequest(`/api/location/geocode${buildQuery({ q })}`),
   locationCities: (filters) => apiRequest(`/api/location/cities${buildQuery(filters)}`),
   listListings: (filters) => apiRequest(`/api/listings${buildQuery(filters)}`),
   listingById: (id) => apiRequest(`/api/listings/${id}`),
@@ -96,6 +97,16 @@ export const api = {
   askAI: (payload) => apiRequest('/api/ai/chat', { method: 'POST', body: payload }),
   createFeedback: (data) => apiRequest('/api/feedback', { method: 'POST', body: data }),
   listMyFeedback: (filters) => apiRequest(`/api/feedback/mine${buildQuery(filters)}`),
+  listBanners: (filters) => apiRequest(`/api/banners${buildQuery(filters)}`),
+  listMyBanners: (filters) => apiRequest(`/api/banners/mine${buildQuery(filters)}`),
+  createBanner: (data) => apiRequest('/api/banners', { method: 'POST', body: data }),
+  updateBanner: (id, data) => apiRequest(`/api/banners/${id}`, { method: 'PUT', body: data }),
+  deleteBanner: (id) => apiRequest(`/api/banners/${id}`, { method: 'DELETE' }),
+  uploadBannerImage: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiRequest('/api/banners/upload', { method: 'POST', formData });
+  },
   adminSummary: () => apiRequest('/api/admin/summary'),
   listAdminActions: (filters) => apiRequest(`/api/admin/actions${buildQuery(filters)}`),
   listAdminFeedback: (filters) => apiRequest(`/api/admin/feedback${buildQuery(filters)}`),

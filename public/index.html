@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#2874f0" />
-    <title>📚 KitaabPadhoIndia | Geo Smart Study Marketplace</title>
+    <title>&#x1F4DA; KitaabPadhoIndia | Geo Smart Study Marketplace</title>
     <link rel="icon" type="image/svg+xml" href="/assets/icons/bookish.svg" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -13,7 +13,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/assets/css/app.css?v=20260225c" />
+    <link rel="stylesheet" href="/assets/css/app.css?v=20260226a" />
   </head>
   <body>
     <header class="kb-header">
@@ -33,10 +33,6 @@
 
         <select id="topAreaSelect" class="kb-select compact">
           <option value="all">All Areas</option>
-          <option value="loni_kalbhor">Loni Kalbhor</option>
-          <option value="hadapsar">Hadapsar</option>
-          <option value="camp">Camp</option>
-          <option value="other">Other</option>
         </select>
 
         <button id="locateBtn" class="kb-btn kb-btn-ghost" type="button">Use GPS</button>
@@ -50,6 +46,7 @@
         <a id="communityNavLink" href="#community" hidden>Community</a>
         <a id="profileNavLink" href="#profilePanel" hidden>Profile</a>
         <a id="aiNavLink" href="#ai" hidden>Ask PadhAI</a>
+        <a id="supportNavLink" href="#supportPanel" hidden>Customer Service</a>
         <button id="notificationsBtn" class="kb-btn kb-btn-ghost notif-btn" hidden type="button">
           Notifications
           <span id="notificationsCount" class="notif-count">0</span>
@@ -77,14 +74,27 @@
         <aside class="hero-panel">
           <h3>Live Location</h3>
           <p id="locationStatus">Location not selected yet.</p>
-          <small class="muted">Tip: choose a static area or tap Use GPS for distance sorting.</small>
+          <small class="muted">Tip: use GPS to auto-load nearby localities and city options (250 KM).</small>
         </aside>
+      </section>
+
+      <section id="promoBannerSection" class="panel promo-wrap">
+        <div class="panel-head">
+          <h2>Live Updates</h2>
+          <p id="promoBannerStatus" class="muted"></p>
+        </div>
+        <div id="promoBanners" class="promo-banners"></div>
       </section>
 
       <section id="marketplace" class="panel">
         <div class="panel-head">
           <h2>Marketplace</h2>
           <p class="muted">Explore nearby listings. Seller posting is available only in the seller portal URL.</p>
+        </div>
+
+        <div class="kb-tabs" id="listingScopeTabs">
+          <button class="tab-btn active" data-scope="local" type="button">Local (250 KM)</button>
+          <button class="tab-btn" data-scope="india" type="button">India</button>
         </div>
 
         <div class="kb-tabs" id="listingTypeTabs">
@@ -111,7 +121,9 @@
             <option value="individual_seller">Individual Seller</option>
             <option value="shop">Shop</option>
           </select>
-          <input id="cityFilter" class="kb-input" placeholder="Filter by city" />
+          <select id="cityFilter" class="kb-select">
+            <option value="">Use GPS to load nearby city/locality</option>
+          </select>
           <select id="sortFilter" class="kb-select">
             <option value="newest">Newest</option>
             <option value="price_asc">Price: Low to High</option>
@@ -119,14 +131,6 @@
             <option value="distance">Distance (with GPS)</option>
           </select>
           <button id="applyListingFiltersBtn" class="kb-btn kb-btn-ghost" type="button">Apply Filters</button>
-        </div>
-
-        <div id="areaChips" class="area-chips">
-          <button class="area-chip active" data-area="all" type="button">All</button>
-          <button class="area-chip" data-area="loni_kalbhor" type="button">Loni Kalbhor</button>
-          <button class="area-chip" data-area="hadapsar" type="button">Hadapsar</button>
-          <button class="area-chip" data-area="camp" type="button">Camp</button>
-          <button class="area-chip" data-area="other" type="button">Other</button>
         </div>
 
         <div id="listingsGrid" class="cards"></div>
@@ -242,7 +246,7 @@
           <textarea
             name="prompt"
             class="kb-textarea"
-            placeholder="Example: I am in Hadapsar, need Engineering Maths notes under 300, what should I ask sellers?"
+            placeholder="Example: I am in my area, need Engineering Maths notes under 300, what should I ask sellers?"
             required
           ></textarea>
           <div class="drawer-actions">
@@ -278,7 +282,7 @@
     </footer>
 
     <section id="authModal" class="modal hidden" aria-hidden="true">
-      <div class="modal-card">
+      <div class="modal-card auth-modal-card">
         <button id="closeAuthBtn" class="modal-close" type="button">x</button>
         <h3>Welcome Back</h3>
         <p class="muted">Login or signup to unlock Community, Ask PadhAI, notifications, and full buyer actions.</p>
@@ -337,9 +341,10 @@
       </div>
     </section>
 
-    <script type="module" src="/assets/js/app.js?v=20260225c"></script>
+    <script type="module" src="/assets/js/app.js?v=20260226a"></script>
   </body>
 </html>
+
 
 
 

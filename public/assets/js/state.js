@@ -13,6 +13,7 @@ export const state = {
     radiusKm: 250
   },
   marketplace: {
+    scope: 'local',
     listingType: 'buy',
     q: '',
     category: '',

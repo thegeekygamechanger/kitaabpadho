@@ -1,4 +1,5 @@
 import { api } from './api.js';
+import { initFormEnhancements } from './forms.js';
 import { escapeHtml } from './ui.js';
 
 function el(id) {
@@ -30,8 +31,12 @@ const crudState = {
   listings: [],
   posts: [],
   comments: [],
-  deliveryJobs: []
+  deliveryJobs: [],
+  banners: [],
+  feedback: []
 };
+
+initFormEnhancements();
 
 function renderSummary(summary) {
   const node = el('adminSummary');
@@ -144,6 +149,60 @@ function renderCrudPanels() {
   });
 }
 
+function renderBannerList(items) {
+  const node = el('adminBannerList');
+  if (!node) return;
+  if (!Array.isArray(items) || !items.length) {
+    node.innerHTML = `<article class="state-empty">No banners found.</article>`;
+    return;
+  }
+  node.innerHTML = items
+    .map(
+      (item) => `<article class="card">
+        <div class="card-body">
+          <div class="card-meta">
+            <span class="pill type-buy">${escapeHtml(item.scope || 'local')}</span>
+            <span class="muted">${escapeHtml(item.source || 'manual')}</span>
+            <span class="muted">${item.isActive ? 'active' : 'inactive'}</span>
+          </div>
+          <h3 class="card-title">${escapeHtml(item.title || '')}</h3>
+          <p class="muted">${escapeHtml(item.message || '')}</p>
+          <div class="card-actions">
+            <button class="kb-btn kb-btn-ghost admin-banner-action-btn" data-action="view" data-id="${item.id}" type="button">View</button>
+            <button class="kb-btn kb-btn-dark admin-banner-action-btn" data-action="edit" data-id="${item.id}" type="button">Edit</button>
+            <button class="kb-btn kb-btn-dark admin-banner-action-btn" data-action="delete" data-id="${item.id}" type="button">Delete</button>
+          </div>
+        </div>
+      </article>`
+    )
+    .join('');
+}
+
+function renderFeedbackList(items) {
+  const node = el('adminFeedbackList');
+  if (!node) return;
+  if (!Array.isArray(items) || !items.length) {
+    node.innerHTML = `<article class="state-empty">No customer service queries found.</article>`;
+    return;
+  }
+  node.innerHTML = items
+    .map(
+      (item) => `<article class="card">
+        <div class="card-body">
+          <div class="card-meta">
+            <span class="pill type-buy">${escapeHtml(item.sourcePortal || 'client')}</span>
+            <span class="muted">${escapeHtml(item.senderRole || 'guest')}</span>
+            <span class="muted">${escapeHtml(fmtTime(item.createdAt))}</span>
+          </div>
+          <h3 class="card-title">${escapeHtml(item.subject || '')}</h3>
+          <p class="muted">${escapeHtml(item.message || '')}</p>
+          <p class="muted">${escapeHtml(item.senderName || '')} | ${escapeHtml(item.senderEmail || '')}</p>
+        </div>
+      </article>`
+    )
+    .join('');
+}
+
 function getFilters() {
   return {
     q: el('adminSearchInput')?.value.trim() || '',
@@ -219,6 +278,29 @@ async function refreshCrudData() {
   }
 }
 
+async function refreshBannerData() {
+  try {
+    setText('adminBannerStatus', 'Loading banners...');
+    const result = await api.listMyBanners({ limit: 120 });
+    crudState.banners = result.data || [];
+    renderBannerList(crudState.banners);
+    setText('adminBannerStatus', `Banners: ${crudState.banners.length}`);
+  } catch (error) {
+    setText('adminBannerStatus', error.message || 'Unable to load banners');
+  }
+}
+
+async function refreshFeedbackData() {
+  try {
+    const result = await api.listAdminFeedback({ limit: 60, offset: 0 });
+    crudState.feedback = result.data || [];
+    renderFeedbackList(crudState.feedback);
+  } catch (error) {
+    const node = el('adminFeedbackList');
+    if (node) node.innerHTML = `<article class="state-empty state-error">${escapeHtml(error.message || 'Unable to load feedback')}</article>`;
+  }
+}
+
 function findCrudItem(kind, id) {
   const numericId = Number(id);
   if (kind === 'listing') return crudState.listings.find((item) => Number(item.id) === numericId);
@@ -267,9 +349,10 @@ async function handleCrudAction(kind, action, id) {
         paymentModes: Array.isArray(item.paymentModes) && item.paymentModes.length ? item.paymentModes : ['cod'],
         price: nextPrice,
         city: nextCity.trim() || item.city || 'Unknown',
-        areaCode: item.areaCode || 'other',
+        areaCode: item.areaCode || 'unknown',
         serviceableAreaCodes: Array.isArray(item.serviceableAreaCodes) ? item.serviceableAreaCodes : [],
         serviceableCities: Array.isArray(item.serviceableCities) ? item.serviceableCities : [],
+        publishIndia: Boolean(item.publishIndia),
         latitude: Number(item.latitude),
         longitude: Number(item.longitude)
       });
@@ -365,12 +448,50 @@ async function handleCrudAction(kind, action, id) {
   }
 }
 
+function findBanner(id) {
+  return crudState.banners.find((item) => Number(item.id) === Number(id));
+}
+
+async function handleBannerAction(action, id) {
+  const item = findBanner(id);
+  if (!item) {
+    setText('adminBannerStatus', 'Banner not found.');
+    return;
+  }
+  if (action === 'view') {
+    window.alert(`${item.title}\n${item.message || ''}\n${item.linkUrl || '/#marketplace'}`);
+    return;
+  }
+  if (action === 'edit') {
+    const nextTitle = window.prompt('Banner title', item.title || '');
+    if (nextTitle === null) return;
+    const nextMessage = window.prompt('Banner message', item.message || '');
+    if (nextMessage === null) return;
+    const nextLink = window.prompt('Redirect URL', item.linkUrl || '/#marketplace');
+    if (nextLink === null) return;
+    await api.updateBanner(item.id, {
+      title: nextTitle.trim(),
+      message: nextMessage.trim(),
+      linkUrl: nextLink.trim() || '/#marketplace'
+    });
+    await refreshBannerData();
+    return;
+  }
+  if (action === 'delete') {
+    if (!window.confirm(`Delete banner "${item.title}"?`)) return;
+    await api.deleteBanner(item.id);
+    await refreshBannerData();
+  }
+}
+
 async function checkAdminSession() {
   try {
     const me = await api.authMe();
     const isAdmin = me.authenticated && me.user?.role === 'admin';
     el('adminLoginPanel')?.classList.toggle('hidden', isAdmin);
     el('adminMainPanel')?.classList.toggle('hidden', !isAdmin);
+    el('adminBannerPanel')?.classList.toggle('hidden', !isAdmin);
+    el('adminSupportPanel')?.classList.toggle('hidden', !isAdmin);
     if (!me.authenticated) {
       setText('adminLoginStatus', 'Login with an admin account to open this panel.');
       setText('adminStatus', 'Admin login required.');
@@ -384,12 +505,13 @@ async function checkAdminSession() {
     }
     setText('adminLoginStatus', `Admin session active: ${me.user?.email || ''}`);
     if (isAdmin) {
-      await refreshAdminData();
-      await refreshCrudData();
+      await Promise.all([refreshAdminData(), refreshCrudData(), refreshBannerData(), refreshFeedbackData()]);
     }
   } catch (error) {
     el('adminLoginPanel')?.classList.remove('hidden');
     el('adminMainPanel')?.classList.add('hidden');
+    el('adminBannerPanel')?.classList.add('hidden');
+    el('adminSupportPanel')?.classList.add('hidden');
     setText('adminLoginStatus', error.message || 'Unable to validate admin session.');
     setText('adminStatus', 'Unable to load admin panel.');
   }
@@ -429,6 +551,14 @@ el('adminCrudRefreshBtn')?.addEventListener('click', () => {
   refreshCrudData().catch(() => null);
 });
 
+el('adminBannerRefreshBtn')?.addEventListener('click', () => {
+  refreshBannerData().catch(() => null);
+});
+
+el('adminSupportRefreshBtn')?.addEventListener('click', () => {
+  refreshFeedbackData().catch(() => null);
+});
+
 el('adminMainPanel')?.addEventListener('click', async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
@@ -443,6 +573,52 @@ el('adminMainPanel')?.addEventListener('click', async (event) => {
   }
 });
 
+el('adminBannerList')?.addEventListener('click', async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const button = target.closest('.admin-banner-action-btn');
+  if (!button) return;
+  try {
+    setText('adminBannerStatus', 'Applying action...');
+    await handleBannerAction(button.dataset.action, button.dataset.id);
+    setText('adminBannerStatus', 'Action completed.');
+  } catch (error) {
+    setText('adminBannerStatus', error.message || 'Banner action failed');
+  }
+});
+
+el('adminBannerForm')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  setText('adminBannerStatus', 'Publishing banner...');
+  try {
+    let imageKey = '';
+    let imageUrl = '';
+    const file = form.image?.files?.[0];
+    if (file && String(file.type || '').startsWith('image/')) {
+      const uploaded = await api.uploadBannerImage(file);
+      imageKey = uploaded.key || '';
+      imageUrl = uploaded.url || '';
+    }
+    await api.createBanner({
+      title: form.title.value.trim(),
+      message: form.message.value.trim(),
+      linkUrl: (form.linkUrl.value || '/#marketplace').trim(),
+      buttonText: (form.buttonText.value || 'View').trim(),
+      scope: form.scope.value || 'local',
+      priority: Number(form.priority.value || 10),
+      isActive: Boolean(form.isActive.checked),
+      imageKey,
+      imageUrl
+    });
+    form.reset();
+    setText('adminBannerStatus', 'Banner published.');
+    await refreshBannerData();
+  } catch (error) {
+    setText('adminBannerStatus', error.message || 'Unable to publish banner');
+  }
+});
+
 el('adminLogoutBtn')?.addEventListener('click', async () => {
   try {
     await api.authLogout();
@@ -453,7 +629,7 @@ el('adminLogoutBtn')?.addEventListener('click', async () => {
 
 setInterval(() => {
   if (!el('adminMainPanel')?.classList.contains('hidden')) {
-    Promise.all([refreshAdminData(), refreshCrudData()]).catch(() => null);
+    Promise.all([refreshAdminData(), refreshCrudData(), refreshBannerData(), refreshFeedbackData()]).catch(() => null);
   }
 }, 20000);
 

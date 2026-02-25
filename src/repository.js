@@ -374,6 +374,7 @@ function createRepository(queryFn) {
           INITCAP(REPLACE(area_code, '_', ' ')) AS "areaName",
           COUNT(*)::int AS "listingCount"
          FROM listings
+         WHERE area_code <> ''
          GROUP BY area_code
          ORDER BY "listingCount" DESC`
       );
@@ -670,8 +671,10 @@ function createRepository(queryFn) {
       const where = [];
       let distanceSql = 'NULL::double precision';
       const hasCoords = typeof filters.lat === 'number' && typeof filters.lon === 'number';
+      const scope = String(filters.scope || 'local').toLowerCase();
+      const useGeoLocalScope = scope === 'local' && hasCoords;
 
-      if (hasCoords) {
+      if (useGeoLocalScope) {
         values.push(filters.lat, filters.lon);
         const latParam = values.length - 1;
         const lonParam = values.length;
@@ -685,6 +688,10 @@ function createRepository(queryFn) {
           values.push(filters.radiusKm);
           where.push(`l.latitude IS NOT NULL AND l.longitude IS NOT NULL AND ${distanceSql} <= $${values.length}`);
         }
+      }
+
+      if (scope === 'india') {
+        where.push('l.publish_india = TRUE');
       }
 
       if (filters.q) {
@@ -704,7 +711,7 @@ function createRepository(queryFn) {
         values.push(filters.sellerType);
         where.push(`l.seller_type = $${values.length}`);
       }
-      if (filters.city) {
+      if (filters.city && scope !== 'india') {
         values.push(`%${filters.city}%`);
         const cityParam = values.length;
         where.push(
@@ -715,7 +722,7 @@ function createRepository(queryFn) {
           ))`
         );
       }
-      if (filters.areaCode && filters.areaCode !== 'all') {
+      if (scope !== 'india' && filters.areaCode && filters.areaCode !== 'all') {
         values.push(filters.areaCode);
         const areaCodeParam = values.length;
         where.push(
@@ -732,7 +739,7 @@ function createRepository(queryFn) {
       let orderSql = 'l.created_at DESC';
       if (filters.sort === 'price_asc') orderSql = 'l.price ASC, l.created_at DESC';
       if (filters.sort === 'price_desc') orderSql = 'l.price DESC, l.created_at DESC';
-      if (filters.sort === 'distance' && hasCoords) orderSql = `"distanceKm" ASC NULLS LAST, l.created_at DESC`;
+      if (filters.sort === 'distance' && useGeoLocalScope) orderSql = `"distanceKm" ASC NULLS LAST, l.created_at DESC`;
 
       const result = await run(
         `SELECT
@@ -749,6 +756,7 @@ function createRepository(queryFn) {
           l.area_code AS "areaCode",
           l.serviceable_area_codes AS "serviceableAreaCodes",
           l.serviceable_cities AS "serviceableCities",
+          l.publish_india AS "publishIndia",
           l.latitude,
           l.longitude,
           l.created_by AS "createdBy",
@@ -786,8 +794,10 @@ function createRepository(queryFn) {
       const where = [];
       let distanceSql = 'NULL::double precision';
       const hasCoords = typeof filters.lat === 'number' && typeof filters.lon === 'number';
+      const scope = String(filters.scope || 'local').toLowerCase();
+      const useGeoLocalScope = scope === 'local' && hasCoords;
 
-      if (hasCoords) {
+      if (useGeoLocalScope) {
         values.push(filters.lat, filters.lon);
         const latParam = values.length - 1;
         const lonParam = values.length;
@@ -800,6 +810,10 @@ function createRepository(queryFn) {
           values.push(filters.radiusKm);
           where.push(`latitude IS NOT NULL AND longitude IS NOT NULL AND ${distanceSql} <= $${values.length}`);
         }
+      }
+
+      if (scope === 'india') {
+        where.push('publish_india = TRUE');
       }
 
       if (filters.q) {
@@ -819,7 +833,7 @@ function createRepository(queryFn) {
         values.push(filters.sellerType);
         where.push(`seller_type = $${values.length}`);
       }
-      if (filters.city) {
+      if (filters.city && scope !== 'india') {
         values.push(`%${filters.city}%`);
         const cityParam = values.length;
         where.push(
@@ -830,7 +844,7 @@ function createRepository(queryFn) {
           ))`
         );
       }
-      if (filters.areaCode && filters.areaCode !== 'all') {
+      if (scope !== 'india' && filters.areaCode && filters.areaCode !== 'all') {
         values.push(filters.areaCode);
         const areaCodeParam = values.length;
         where.push(
@@ -856,14 +870,15 @@ function createRepository(queryFn) {
       areaCode,
       serviceableAreaCodes = [],
       serviceableCities = [],
+      publishIndia = false,
       latitude,
       longitude,
       createdBy
     }) {
       const result = await run(
         `INSERT INTO listings
-          (title, description, category, listing_type, seller_type, delivery_mode, payment_modes, price, city, area_code, serviceable_area_codes, serviceable_cities, latitude, longitude, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+          (title, description, category, listing_type, seller_type, delivery_mode, payment_modes, price, city, area_code, serviceable_area_codes, serviceable_cities, publish_india, latitude, longitude, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
          RETURNING
           id,
           title,
@@ -878,6 +893,7 @@ function createRepository(queryFn) {
           area_code AS "areaCode",
           serviceable_area_codes AS "serviceableAreaCodes",
           serviceable_cities AS "serviceableCities",
+          publish_india AS "publishIndia",
           latitude,
           longitude,
           created_by AS "createdBy",
@@ -895,6 +911,7 @@ function createRepository(queryFn) {
           areaCode,
           serviceableAreaCodes,
           serviceableCities,
+          Boolean(publishIndia),
           latitude,
           longitude,
           createdBy
@@ -919,6 +936,7 @@ function createRepository(queryFn) {
       areaCode,
       serviceableAreaCodes = [],
       serviceableCities = [],
+      publishIndia = false,
       latitude,
       longitude
     }) {
@@ -937,8 +955,9 @@ function createRepository(queryFn) {
           area_code = $13,
           serviceable_area_codes = $14,
           serviceable_cities = $15,
-          latitude = $16,
-          longitude = $17
+          publish_india = $16,
+          latitude = $17,
+          longitude = $18
          WHERE id = $1
            AND ($2::boolean OR created_by = $3)
          RETURNING
@@ -955,6 +974,7 @@ function createRepository(queryFn) {
           area_code AS "areaCode",
           serviceable_area_codes AS "serviceableAreaCodes",
           serviceable_cities AS "serviceableCities",
+          publish_india AS "publishIndia",
           latitude,
           longitude,
           created_by AS "createdBy",
@@ -975,6 +995,7 @@ function createRepository(queryFn) {
           areaCode,
           serviceableAreaCodes,
           serviceableCities,
+          Boolean(publishIndia),
           latitude,
           longitude
         ]
@@ -1033,6 +1054,7 @@ function createRepository(queryFn) {
           l.area_code AS "areaCode",
           l.serviceable_area_codes AS "serviceableAreaCodes",
           l.serviceable_cities AS "serviceableCities",
+          l.publish_india AS "publishIndia",
           l.latitude,
           l.longitude,
           l.created_by AS "createdBy",
@@ -1564,7 +1586,274 @@ function createRepository(queryFn) {
       return result.rows;
     },
 
-    async createDeliveryJob({ listingId, pickupCity, pickupAreaCode = 'other', pickupLatitude = null, pickupLongitude = null, deliveryMode, createdBy }) {
+    async listPublicBanners({ scope = 'local', limit = 10 } = {}) {
+      const normalizedScope = String(scope || 'local').toLowerCase();
+      let scopeWhere = '(b.scope = \'local\' OR b.scope = \'all\')';
+      if (normalizedScope === 'india') scopeWhere = '(b.scope = \'india\' OR b.scope = \'all\')';
+      if (normalizedScope === 'all') scopeWhere = 'TRUE';
+
+      const result = await run(
+        `SELECT
+          b.id,
+          b.title,
+          b.message,
+          b.image_key AS "imageKey",
+          b.image_url AS "imageUrl",
+          b.link_url AS "linkUrl",
+          b.button_text AS "buttonText",
+          b.scope,
+          b.is_active AS "isActive",
+          b.priority,
+          b.source,
+          b.listing_id AS "listingId",
+          b.created_by AS "createdBy",
+          b.created_by_role AS "createdByRole",
+          b.created_at AS "createdAt",
+          b.updated_at AS "updatedAt"
+         FROM marketing_banners b
+         WHERE b.is_active = TRUE
+           AND ${scopeWhere}
+         ORDER BY b.priority DESC, b.updated_at DESC
+         LIMIT $1`,
+        [limit]
+      );
+      return result.rows;
+    },
+
+    async listBannersByActor({ actorId = null, isAdmin = false, limit = 50 } = {}) {
+      const values = [];
+      const where = [];
+      if (!isAdmin) {
+        values.push(actorId);
+        where.push(`b.created_by = $${values.length}`);
+      }
+      values.push(limit);
+      const limitParam = values.length;
+      const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+      const result = await run(
+        `SELECT
+          b.id,
+          b.title,
+          b.message,
+          b.image_key AS "imageKey",
+          b.image_url AS "imageUrl",
+          b.link_url AS "linkUrl",
+          b.button_text AS "buttonText",
+          b.scope,
+          b.is_active AS "isActive",
+          b.priority,
+          b.source,
+          b.listing_id AS "listingId",
+          b.created_by AS "createdBy",
+          b.created_by_role AS "createdByRole",
+          b.created_at AS "createdAt",
+          b.updated_at AS "updatedAt"
+         FROM marketing_banners b
+         ${whereSql}
+         ORDER BY b.updated_at DESC
+         LIMIT $${limitParam}`,
+        values
+      );
+      return result.rows;
+    },
+
+    async getBannerById(id) {
+      const result = await run(
+        `SELECT
+          b.id,
+          b.title,
+          b.message,
+          b.image_key AS "imageKey",
+          b.image_url AS "imageUrl",
+          b.link_url AS "linkUrl",
+          b.button_text AS "buttonText",
+          b.scope,
+          b.is_active AS "isActive",
+          b.priority,
+          b.source,
+          b.listing_id AS "listingId",
+          b.created_by AS "createdBy",
+          b.created_by_role AS "createdByRole",
+          b.created_at AS "createdAt",
+          b.updated_at AS "updatedAt"
+         FROM marketing_banners b
+         WHERE b.id = $1
+         LIMIT 1`,
+        [id]
+      );
+      return result.rows[0] || null;
+    },
+
+    async createBanner({
+      title,
+      message = '',
+      imageKey = '',
+      imageUrl = '',
+      linkUrl = '/#marketplace',
+      buttonText = 'View',
+      scope = 'local',
+      isActive = true,
+      priority = 0,
+      source = 'manual',
+      listingId = null,
+      createdBy = null,
+      createdByRole = 'seller'
+    }) {
+      const result = await run(
+        `INSERT INTO marketing_banners
+          (title, message, image_key, image_url, link_url, button_text, scope, is_active, priority, source, listing_id, created_by, created_by_role, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
+         RETURNING
+          id,
+          title,
+          message,
+          image_key AS "imageKey",
+          image_url AS "imageUrl",
+          link_url AS "linkUrl",
+          button_text AS "buttonText",
+          scope,
+          is_active AS "isActive",
+          priority,
+          source,
+          listing_id AS "listingId",
+          created_by AS "createdBy",
+          created_by_role AS "createdByRole",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"`,
+        [
+          title,
+          message || '',
+          imageKey || '',
+          imageUrl || '',
+          linkUrl || '/#marketplace',
+          buttonText || 'View',
+          scope || 'local',
+          Boolean(isActive),
+          Number(priority || 0),
+          source || 'manual',
+          listingId,
+          createdBy,
+          createdByRole || 'seller'
+        ]
+      );
+      return result.rows[0] || null;
+    },
+
+    async updateBanner({ bannerId, actorId, isAdmin = false, patch = {} }) {
+      const allowedMap = {
+        title: 'title',
+        message: 'message',
+        imageKey: 'image_key',
+        imageUrl: 'image_url',
+        linkUrl: 'link_url',
+        buttonText: 'button_text',
+        scope: 'scope',
+        isActive: 'is_active',
+        priority: 'priority'
+      };
+      const values = [bannerId, Boolean(isAdmin), actorId];
+      const sets = [];
+      for (const [key, column] of Object.entries(allowedMap)) {
+        if (!(key in patch)) continue;
+        values.push(patch[key]);
+        sets.push(`${column} = $${values.length}`);
+      }
+      if (sets.length === 0) return null;
+      sets.push('updated_at = NOW()');
+
+      const result = await run(
+        `UPDATE marketing_banners
+         SET ${sets.join(', ')}
+         WHERE id = $1
+           AND ($2::boolean OR created_by = $3)
+         RETURNING
+          id,
+          title,
+          message,
+          image_key AS "imageKey",
+          image_url AS "imageUrl",
+          link_url AS "linkUrl",
+          button_text AS "buttonText",
+          scope,
+          is_active AS "isActive",
+          priority,
+          source,
+          listing_id AS "listingId",
+          created_by AS "createdBy",
+          created_by_role AS "createdByRole",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"`,
+        values
+      );
+      return result.rows[0] || null;
+    },
+
+    async deleteBanner({ bannerId, actorId, isAdmin = false }) {
+      const result = await run(
+        `DELETE FROM marketing_banners
+         WHERE id = $1
+           AND ($2::boolean OR created_by = $3)
+         RETURNING id, title, source, listing_id AS "listingId", created_by AS "createdBy"`,
+        [bannerId, Boolean(isAdmin), actorId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async upsertAutoBannerForListing({
+      listingId,
+      title,
+      city,
+      listingType,
+      imageKey = '',
+      imageUrl = '',
+      publishIndia = false,
+      createdBy = null,
+      createdByRole = 'seller'
+    }) {
+      const scope = publishIndia ? 'all' : 'local';
+      const linkUrl = '/#marketplace';
+      const message = `${title} is now live in ${city} (${listingType}).`;
+      const existing = await run(
+        `SELECT id
+         FROM marketing_banners
+         WHERE listing_id = $1 AND source = 'listing_auto'
+         LIMIT 1`,
+        [listingId]
+      );
+
+      if (existing.rows[0]?.id) {
+        const updated = await run(
+          `UPDATE marketing_banners
+           SET
+            title = $2,
+            message = $3,
+            image_key = CASE WHEN $4 = '' THEN image_key ELSE $4 END,
+            image_url = CASE WHEN $5 = '' THEN image_url ELSE $5 END,
+            link_url = $6,
+            button_text = 'Open',
+            scope = $7,
+            is_active = TRUE,
+            priority = GREATEST(priority, 20),
+            updated_at = NOW()
+           WHERE id = $1
+           RETURNING id`,
+          [existing.rows[0].id, title, message, imageKey || '', imageUrl || '', linkUrl, scope]
+        );
+        return updated.rows[0] || null;
+      }
+
+      const inserted = await run(
+        `INSERT INTO marketing_banners
+          (title, message, image_key, image_url, link_url, button_text, scope, is_active, priority, source, listing_id, created_by, created_by_role, updated_at)
+         VALUES ($1,$2,$3,$4,$5,'Open',$6,TRUE,20,'listing_auto',$7,$8,$9,NOW())
+         RETURNING id`,
+        [title, message, imageKey || '', imageUrl || '', linkUrl, scope, listingId, createdBy, createdByRole]
+      );
+      return inserted.rows[0] || null;
+    },
+
+    async createDeliveryJob({ listingId, pickupCity, pickupAreaCode = '', pickupLatitude = null, pickupLongitude = null, deliveryMode, createdBy }) {
       const result = await run(
         `INSERT INTO delivery_jobs
           (listing_id, pickup_city, pickup_area_code, pickup_latitude, pickup_longitude, delivery_mode, created_by, status)

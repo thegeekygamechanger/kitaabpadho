@@ -1,12 +1,12 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#163f86" />
-    <title>📚 KitaabPadho Admin</title>
+    <title>&#x1F4DA; KitaabPadho Admin</title>
     <link rel="icon" type="image/svg+xml" href="/assets/icons/bookish.svg" />
-    <link rel="stylesheet" href="/assets/css/app.css?v=20260225c" />
+    <link rel="stylesheet" href="/assets/css/app.css?v=20260226a" />
   </head>
   <body>
     <header class="kb-header">
@@ -25,6 +25,11 @@
           <button id="adminLogoutBtn" class="kb-btn kb-btn-dark" type="button">Logout</button>
         </div>
       </div>
+      <nav class="kb-nav">
+        <a class="active" href="#adminMainPanel">Admin Actions</a>
+        <a href="#adminBannerPanel">Banners</a>
+        <a href="#adminSupportPanel">Customer Service</a>
+      </nav>
     </header>
 
     <main class="kb-main">
@@ -80,12 +85,48 @@
           </section>
         </div>
       </section>
+
+      <section id="adminBannerPanel" class="panel hidden">
+        <div class="panel-head">
+          <h2>Banner Manager</h2>
+          <button id="adminBannerRefreshBtn" class="kb-btn kb-btn-ghost" type="button">Refresh</button>
+        </div>
+        <form id="adminBannerForm" class="drawer">
+          <input name="title" class="kb-input" placeholder="Banner title" required />
+          <textarea name="message" class="kb-textarea" placeholder="Banner text"></textarea>
+          <input name="linkUrl" class="kb-input" placeholder="Redirect URL" />
+          <input name="buttonText" class="kb-input" placeholder="Button text" />
+          <select name="scope" class="kb-select">
+            <option value="local">Local</option>
+            <option value="india">India</option>
+            <option value="all">All</option>
+          </select>
+          <input name="priority" class="kb-input" type="number" value="10" />
+          <label class="file-pick">
+            <span>Banner image</span>
+            <input name="image" type="file" accept="image/*" />
+          </label>
+          <label><input name="isActive" type="checkbox" checked /> Active</label>
+          <button class="kb-btn kb-btn-primary" type="submit">Publish Banner</button>
+          <p id="adminBannerStatus" class="muted"></p>
+        </form>
+        <div id="adminBannerList" class="cards"></div>
+      </section>
+
+      <section id="adminSupportPanel" class="panel hidden">
+        <div class="panel-head">
+          <h2>Customer Service Queries</h2>
+          <button id="adminSupportRefreshBtn" class="kb-btn kb-btn-ghost" type="button">Refresh</button>
+        </div>
+        <div id="adminFeedbackList" class="cards"></div>
+      </section>
     </main>
 
     <footer class="kb-footer">
       <p>Made by UPSC aspirant. Built for learners across India. KitaabPadhoIndia. @2026 copyright</p>
     </footer>
 
-    <script type="module" src="/assets/js/admin-page.js?v=20260225c"></script>
+    <script type="module" src="/assets/js/admin-page.js?v=20260226a"></script>
   </body>
 </html>
+

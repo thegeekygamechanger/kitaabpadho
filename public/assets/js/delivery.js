@@ -1,5 +1,6 @@
 import { api } from './api.js';
 import { initFeedback } from './feedback.js';
+import { initFormEnhancements } from './forms.js';
 import { playNotificationSound, unlockNotificationSound } from './sound.js';
 import { escapeHtml, formatInr } from './ui.js';
 
@@ -18,6 +19,8 @@ let currentJobs = [];
 let stream = null;
 let feedback = null;
 
+initFormEnhancements();
+
 function isDeliveryAccount() {
   if (!currentUser) return false;
   return currentUser.role === 'delivery' || currentUser.role === 'admin';
@@ -30,6 +33,15 @@ function canManageJob(item) {
     Number(item.createdBy) === Number(currentUser.id) ||
     Number(item.claimedBy) === Number(currentUser.id)
   );
+}
+
+function syncPortalVisibility() {
+  const loggedIn = Boolean(currentUser);
+  el('deliveryJobsNav')?.classList.toggle('hidden', !loggedIn);
+  el('deliverySupportNav')?.classList.toggle('hidden', !loggedIn);
+  el('deliveryLoginPanel')?.classList.toggle('hidden', loggedIn);
+  el('deliveryJobsPanel')?.classList.toggle('hidden', !loggedIn);
+  el('deliverySupportPanel')?.classList.toggle('hidden', !loggedIn);
 }
 
 function syncRoleHint() {
@@ -51,6 +63,7 @@ async function refreshAuth() {
     currentUser = null;
     setText('deliveryAuthBadge', 'Guest');
   }
+  syncPortalVisibility();
   syncRoleHint();
   await feedback?.onAuthChanged?.();
   connectRealtime();
@@ -357,6 +370,19 @@ window.addEventListener('keydown', unlockNotificationSound, { once: true });
 
 refreshAuth()
   .then(async () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          currentCoords = {
+            lat: position.coords.latitude,
+            lon: position.coords.longitude
+          };
+          refreshJobs().catch(() => null);
+        },
+        () => null,
+        { maximumAge: 180000, timeout: 7000 }
+      );
+    }
     await refreshJobs();
   })
   .catch(() => null);

@@ -1,5 +1,6 @@
 import { api } from './api.js';
 import { initFeedback } from './feedback.js';
+import { initFormEnhancements } from './forms.js';
 import { playNotificationSound, unlockNotificationSound } from './sound.js';
 import { escapeHtml, formatInr } from './ui.js';
 
@@ -12,62 +13,77 @@ function setText(id, value) {
   if (node) node.textContent = value;
 }
 
+function slugifyAreaCode(value, fallback = 'unknown') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return normalized || fallback;
+}
+
 function normalizeCities(value) {
   return [...new Set(String(value || '').split(',').map((item) => item.trim()).filter(Boolean))];
 }
 
 let currentUser = null;
 let currentListings = [];
+let currentBanners = [];
+let locationOptions = [];
 let stream = null;
 let feedback = null;
+
+initFormEnhancements();
+
+function isSellerAccount() {
+  return Boolean(currentUser && currentUser.role === 'seller');
+}
+
+function isBannerManager() {
+  return Boolean(currentUser && (currentUser.role === 'seller' || currentUser.role === 'admin'));
+}
 
 function canManageListing(item) {
   if (!currentUser || !item) return false;
   return currentUser.role === 'admin' || Number(item.createdBy) === Number(currentUser.id);
 }
 
-function isSellerAccount() {
-  return Boolean(currentUser && currentUser.role === 'seller');
+function canManageBanner(item) {
+  if (!currentUser || !item) return false;
+  return currentUser.role === 'admin' || Number(item.createdBy) === Number(currentUser.id);
+}
+
+function setSectionVisibility(id, visible) {
+  el(id)?.classList.toggle('hidden', !visible);
 }
 
 function syncPortalVisibility() {
   const loggedIn = Boolean(currentUser);
-  const isAdminUser = currentUser?.role === 'admin';
-  const canUseSellerWorkspace = isSellerAccount();
+  const sellerRole = isSellerAccount();
+  const bannerRole = isBannerManager();
 
-  el('sellerPostingPanel')?.classList.toggle('hidden', !canUseSellerWorkspace);
-  el('sellerListingsPanel')?.classList.toggle('hidden', !canUseSellerWorkspace);
+  el('sellerWorkspaceNav')?.classList.toggle('hidden', !sellerRole);
+  el('sellerBannerNav')?.classList.toggle('hidden', !bannerRole);
+  el('sellerSupportNav')?.classList.toggle('hidden', !loggedIn);
+  setSectionVisibility('sellerLoginPanel', !loggedIn);
+  setSectionVisibility('sellerPostingPanel', sellerRole);
+  setSectionVisibility('sellerListingsPanel', sellerRole);
+  setSectionVisibility('sellerBannerPanel', bannerRole);
+  setSectionVisibility('sellerSupportPanel', loggedIn);
 
   if (!loggedIn) {
     setText('sellerPortalHint', 'Login to post and manage your listings.');
     return;
   }
-
-  if (isAdminUser) {
-    setText('sellerPortalHint', 'Admin account detected. Use /admin for admin actions.');
-    return;
-  }
-
-  if (!canUseSellerWorkspace) {
+  if (!sellerRole && currentUser?.role !== 'admin') {
     setText('sellerPortalHint', `Current role is ${currentUser.role}. Seller role required for posting.`);
     return;
   }
-
-  setText('sellerPortalHint', 'Seller workspace ready. You can post, edit, and delete your listings.');
-}
-
-async function refreshAuth() {
-  try {
-    const me = await api.authMe();
-    currentUser = me.authenticated ? me.user : null;
-    setText('sellerAuthBadge', currentUser ? `${currentUser.fullName} (${currentUser.email})` : 'Guest');
-  } catch {
-    currentUser = null;
-    setText('sellerAuthBadge', 'Guest');
+  if (currentUser?.role === 'admin') {
+    setText('sellerPortalHint', 'Admin account detected. Listing post is seller-only. Banner manager is available.');
+    return;
   }
-  syncPortalVisibility();
-  await feedback?.onAuthChanged?.();
-  connectRealtime();
+  setText('sellerPortalHint', 'Seller workspace ready. Post, edit, and delete listings.');
 }
 
 function renderListings(items) {
@@ -85,6 +101,7 @@ function renderListings(items) {
         <div class="card-meta">
           <span class="pill type-buy">${escapeHtml(item.listingType || '')}</span>
           <span class="pill type-rent">${escapeHtml(item.sellerType || '')}</span>
+          ${item.publishIndia ? '<span class="pill type-sell">India</span>' : ''}
           <span class="muted">${escapeHtml(item.areaCode || '')}</span>
         </div>
         <h3 class="card-title">${escapeHtml(item.title || '')}</h3>
@@ -106,19 +123,39 @@ function renderListings(items) {
     .join('');
 }
 
-async function refreshListings() {
-  if (!isSellerAccount()) {
-    currentListings = [];
-    renderListings([]);
+function renderBanners(items) {
+  const node = el('sellerBannerList');
+  if (!node) return;
+  if (!Array.isArray(items) || !items.length) {
+    node.innerHTML = `<article class="state-empty">No banners published yet.</article>`;
     return;
   }
-  try {
-    const result = await api.listListings({ limit: 24, offset: 0, sort: 'newest' });
-    currentListings = Array.isArray(result.data) ? result.data.filter((row) => canManageListing(row)) : [];
-    renderListings(currentListings);
-  } catch (error) {
-    setText('sellerListingStatus', error.message || 'Unable to load listings');
-  }
+
+  node.innerHTML = items
+    .map(
+      (item) => `<article class="card">
+      <div class="card-body">
+        <div class="card-meta">
+          <span class="pill type-buy">${escapeHtml(item.scope || 'local')}</span>
+          <span class="muted">${escapeHtml(item.source || 'manual')}</span>
+          <span class="muted">${item.isActive ? 'active' : 'inactive'}</span>
+        </div>
+        <h3 class="card-title">${escapeHtml(item.title || '')}</h3>
+        <p class="muted">${escapeHtml(item.message || '')}</p>
+        <p class="muted">Priority: ${escapeHtml(String(item.priority ?? 0))}</p>
+        <div class="card-actions">
+          <button class="kb-btn kb-btn-ghost seller-banner-view-btn" data-id="${item.id}" type="button">View</button>
+          ${
+            canManageBanner(item)
+              ? `<button class="kb-btn kb-btn-dark seller-banner-edit-btn" data-id="${item.id}" type="button">Edit</button>
+                 <button class="kb-btn kb-btn-dark seller-banner-delete-btn" data-id="${item.id}" type="button">Delete</button>`
+              : ''
+          }
+        </div>
+      </div>
+    </article>`
+    )
+    .join('');
 }
 
 function setCityOptions(cities = []) {
@@ -128,41 +165,90 @@ function setCityOptions(cities = []) {
   citySelect.innerHTML = `<option value="">Select city</option>${uniqueCities
     .map((city) => `<option value="${escapeHtml(city)}">${escapeHtml(city)}</option>`)
     .join('')}`;
-  if (uniqueCities.length > 0) citySelect.value = uniqueCities[0];
+  if (uniqueCities.length) citySelect.value = uniqueCities[0];
 }
 
-async function searchCities() {
+function renderServiceableAreas(options = []) {
+  const node = el('sellerServiceableAreaList');
+  if (!node) return;
+  const unique = [];
+  for (const option of options) {
+    const label = String(option.label || option.city || '').trim();
+    if (!label) continue;
+    const areaCode = slugifyAreaCode(option.areaCode || option.city || label, '');
+    if (!areaCode) continue;
+    if (unique.some((row) => row.areaCode === areaCode)) continue;
+    unique.push({ label, areaCode });
+  }
+  node.innerHTML = unique
+    .slice(0, 14)
+    .map(
+      (item) =>
+        `<label><input type="checkbox" name="serviceableAreaCodes" value="${escapeHtml(item.areaCode)}" /> ${escapeHtml(item.label)}</label>`
+    )
+    .join('');
+}
+
+function applyLocationToForm(option) {
   const form = el('sellerListingForm');
-  if (!form) return;
-  const q = String(form.cityQuery?.value || '').trim();
-  const areaCode = String(form.areaCode?.value || '').trim();
-  try {
-    let cities = [];
-    const result = await api.locationCities({ q, areaCode, limit: 40 });
-    cities = Array.isArray(result.data) ? result.data : [];
+  if (!form || !option) return;
+  if (form.city) form.city.value = option.city || option.label || '';
+  if (form.areaCode) form.areaCode.value = option.areaCode || slugifyAreaCode(option.city || option.label || 'unknown');
+  if (form.latitude && Number.isFinite(option.lat)) form.latitude.value = String(option.lat);
+  if (form.longitude && Number.isFinite(option.lon)) form.longitude.value = String(option.lon);
+}
 
-    const lat = Number(form.latitude?.value);
-    const lon = Number(form.longitude?.value);
-    if ((!cities || cities.length === 0) && Number.isFinite(lat) && Number.isFinite(lon)) {
-      const nearby = await api.locationNearby(lat, lon).catch(() => null);
-      cities = (nearby?.nearbyCities || []).map((item) => item.city).filter(Boolean);
-      if (nearby?.current?.city) cities.unshift(nearby.current.city);
-      if (nearby?.current?.locality) cities.unshift(nearby.current.locality);
-      if (nearby?.localityOptions?.length) {
-        cities.push(...nearby.localityOptions.map((item) => item.name).filter(Boolean));
-      }
-      const serviceableCitiesInput = form.serviceableCities;
-      if (serviceableCitiesInput && !String(serviceableCitiesInput.value || '').trim()) {
-        const autoCities = (nearby?.nearbyCities || []).slice(0, 6).map((item) => item.city).filter(Boolean);
-        serviceableCitiesInput.value = autoCities.join(', ');
-      }
-    }
+function renderServiceLocationSelect() {
+  const select = el('sellerServiceLocation');
+  if (!select) return;
+  const values = locationOptions
+    .map((option, index) => ({
+      key: `${index}`,
+      label: option.label || option.city || ''
+    }))
+    .filter((row) => row.label);
+  select.innerHTML = `<option value="">Select serviceable location</option>${values
+    .map((row) => `<option value="${row.key}">${escapeHtml(row.label)}</option>`)
+    .join('')}`;
+  if (values.length) {
+    select.value = values[0].key;
+    const first = locationOptions[Number(values[0].key)];
+    applyLocationToForm(first);
+  }
+}
 
-    if ((!cities || cities.length === 0) && q) cities = [q];
-    setCityOptions(cities);
-    setText('sellerListingStatus', `Loaded ${cities.length || 0} city option(s).`);
-  } catch (error) {
-    setText('sellerListingStatus', error.message || 'Unable to load city options.');
+async function loadGeoOptions(lat, lon) {
+  const result = await api.locationNearby(lat, lon);
+  const options = [];
+  const pushOption = (label, city, areaCode, optLat, optLon) => {
+    const normalizedLabel = String(label || '').trim();
+    if (!normalizedLabel) return;
+    options.push({
+      label: normalizedLabel,
+      city: String(city || normalizedLabel).trim(),
+      areaCode: slugifyAreaCode(areaCode || city || normalizedLabel),
+      lat: Number.isFinite(optLat) ? optLat : lat,
+      lon: Number.isFinite(optLon) ? optLon : lon
+    });
+  };
+
+  pushOption(result.current?.locality || result.current?.city || 'Detected Area', result.current?.city || '', '', lat, lon);
+  for (const locality of result.localityOptions || []) {
+    pushOption(locality.name, locality.filterCity || locality.city || locality.name, '', lat, lon);
+  }
+  for (const cityRow of result.nearbyCities || []) {
+    pushOption(cityRow.city, cityRow.city, cityRow.city, lat, lon);
+  }
+
+  locationOptions = options.slice(0, 20);
+  renderServiceLocationSelect();
+  renderServiceableAreas(locationOptions);
+  setCityOptions(locationOptions.map((item) => item.city));
+
+  const form = el('sellerListingForm');
+  if (form?.serviceableCities && !String(form.serviceableCities.value || '').trim()) {
+    const autoCities = locationOptions.map((item) => item.city).filter(Boolean).slice(0, 8);
+    form.serviceableCities.value = [...new Set(autoCities)].join(', ');
   }
 }
 
@@ -178,15 +264,59 @@ async function detectGpsForSeller() {
     async (position) => {
       const lat = position.coords.latitude;
       const lon = position.coords.longitude;
-      form.latitude.value = String(lat);
-      form.longitude.value = String(lon);
-      await searchCities();
-      setText('sellerListingStatus', `GPS detected: ${lat.toFixed(4)}, ${lon.toFixed(4)}.`);
+      if (form.latitude) form.latitude.value = String(lat);
+      if (form.longitude) form.longitude.value = String(lon);
+      await loadGeoOptions(lat, lon).catch(() => null);
+      setText('sellerListingStatus', `GPS detected. Geo options loaded within 250 KM.`);
     },
     () => {
       setText('sellerListingStatus', 'Location permission denied.');
     }
   );
+}
+
+async function refreshAuth() {
+  try {
+    const me = await api.authMe();
+    currentUser = me.authenticated ? me.user : null;
+    setText('sellerAuthBadge', currentUser ? `${currentUser.fullName} (${currentUser.email})` : 'Guest');
+  } catch {
+    currentUser = null;
+    setText('sellerAuthBadge', 'Guest');
+  }
+  syncPortalVisibility();
+  await feedback?.onAuthChanged?.();
+  connectRealtime();
+}
+
+async function refreshListings() {
+  if (!isSellerAccount()) {
+    currentListings = [];
+    renderListings([]);
+    return;
+  }
+  try {
+    const result = await api.listListings({ limit: 40, offset: 0, sort: 'newest', scope: 'all' });
+    currentListings = Array.isArray(result.data) ? result.data.filter((row) => canManageListing(row)) : [];
+    renderListings(currentListings);
+  } catch (error) {
+    setText('sellerListingStatus', error.message || 'Unable to load listings');
+  }
+}
+
+async function refreshBanners() {
+  if (!isBannerManager()) {
+    currentBanners = [];
+    renderBanners([]);
+    return;
+  }
+  try {
+    const result = await api.listMyBanners({ limit: 80 });
+    currentBanners = Array.isArray(result.data) ? result.data : [];
+    renderBanners(currentBanners);
+  } catch (error) {
+    setText('sellerBannerStatus', error.message || 'Unable to load banners');
+  }
 }
 
 function connectRealtime() {
@@ -203,6 +333,9 @@ function connectRealtime() {
   });
   stream.addEventListener('listing.deleted', async () => {
     if (isSellerAccount()) await refreshListings().catch(() => null);
+  });
+  stream.addEventListener('banner.updated', async () => {
+    if (isBannerManager()) await refreshBanners().catch(() => null);
   });
   stream.addEventListener('feedback.updated', async () => {
     await feedback?.refreshMyFeedback?.().catch(() => null);
@@ -224,13 +357,14 @@ el('sellerLoginForm')?.addEventListener('submit', async (event) => {
     });
     form.reset();
     await refreshAuth();
-    if (!isSellerAccount()) {
+    if (!isSellerAccount() && currentUser?.role !== 'admin') {
       setText('sellerAuthStatus', 'Login successful, but this account is not a seller account.');
       await refreshListings();
       return;
     }
     setText('sellerAuthStatus', 'Seller login successful.');
     await refreshListings();
+    await refreshBanners();
     unlockNotificationSound();
   } catch (error) {
     setText('sellerAuthStatus', error.message || 'Login failed');
@@ -253,6 +387,7 @@ el('sellerSignupForm')?.addEventListener('submit', async (event) => {
     await refreshAuth();
     setText('sellerAuthStatus', 'Seller account created and logged in.');
     await refreshListings();
+    await refreshBanners();
     unlockNotificationSound();
   } catch (error) {
     setText('sellerAuthStatus', error.message || 'Unable to create seller account');
@@ -283,9 +418,10 @@ el('sellerListingForm')?.addEventListener('submit', async (event) => {
       paymentModes: paymentModes.length ? paymentModes : ['cod'],
       price: Number(form.price.value || 0),
       city: form.city.value.trim(),
-      areaCode: form.areaCode.value,
+      areaCode: slugifyAreaCode(form.areaCode.value || form.city.value || 'unknown'),
       serviceableAreaCodes,
       serviceableCities,
+      publishIndia: Boolean(form.publishIndia?.checked),
       latitude: Number(form.latitude.value),
       longitude: Number(form.longitude.value)
     });
@@ -298,29 +434,37 @@ el('sellerListingForm')?.addEventListener('submit', async (event) => {
 
     form.reset();
     setText('sellerListingStatus', 'Listing published.');
-    await searchCities().catch(() => null);
     await refreshListings();
+    await refreshBanners();
     playNotificationSound();
   } catch (error) {
     setText('sellerListingStatus', error.message || 'Unable to publish listing');
   }
 });
 
-el('sellerCitySearchBtn')?.addEventListener('click', () => {
-  searchCities().catch(() => null);
+el('sellerServiceLocation')?.addEventListener('change', async (event) => {
+  const index = Number(event.target.value);
+  const option = Number.isInteger(index) ? locationOptions[index] : null;
+  if (!option) return;
+  applyLocationToForm(option);
+  try {
+    const geo = await api.locationGeocode(option.label || option.city);
+    const form = el('sellerListingForm');
+    if (form?.latitude && Number.isFinite(Number(geo.lat))) form.latitude.value = String(geo.lat);
+    if (form?.longitude && Number.isFinite(Number(geo.lon))) form.longitude.value = String(geo.lon);
+    if (form?.city && geo.city) form.city.value = geo.city;
+    if (form?.areaCode && geo.areaCode) form.areaCode.value = geo.areaCode;
+  } catch {
+    // Keep detected GPS coordinates when geocode fallback fails.
+  }
 });
 
 el('sellerDetectGpsBtn')?.addEventListener('click', () => {
   detectGpsForSeller().catch(() => null);
 });
 
-el('sellerListingForm')
-  ?.querySelector('select[name="areaCode"]')
-  ?.addEventListener('change', () => {
-  searchCities().catch(() => null);
-});
-
 el('sellerRefreshListingsBtn')?.addEventListener('click', () => refreshListings().catch(() => null));
+el('sellerBannerRefreshBtn')?.addEventListener('click', () => refreshBanners().catch(() => null));
 
 el('sellerListings')?.addEventListener('click', async (event) => {
   const target = event.target;
@@ -373,14 +517,16 @@ el('sellerListings')?.addEventListener('click', async (event) => {
         paymentModes: Array.isArray(item.paymentModes) && item.paymentModes.length ? item.paymentModes : ['cod'],
         price,
         city: city.trim() || item.city || 'Unknown',
-        areaCode: item.areaCode || 'other',
+        areaCode: slugifyAreaCode(item.areaCode || city || 'unknown'),
         serviceableAreaCodes: Array.isArray(item.serviceableAreaCodes) ? item.serviceableAreaCodes : [],
         serviceableCities: normalizeCities(serviceableCityRaw),
+        publishIndia: Boolean(item.publishIndia),
         latitude: Number(item.latitude),
         longitude: Number(item.longitude)
       });
       setText('sellerListingStatus', `Listing #${item.id} updated.`);
       await refreshListings();
+      await refreshBanners();
     } catch (error) {
       setText('sellerListingStatus', error.message || 'Unable to update listing');
     }
@@ -399,8 +545,99 @@ el('sellerListings')?.addEventListener('click', async (event) => {
       await api.deleteListing(item.id);
       setText('sellerListingStatus', `Listing #${item.id} deleted.`);
       await refreshListings();
+      await refreshBanners();
     } catch (error) {
       setText('sellerListingStatus', error.message || 'Unable to delete listing');
+    }
+  }
+});
+
+el('sellerBannerForm')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!isBannerManager()) {
+    setText('sellerBannerStatus', 'Seller/Admin login required.');
+    return;
+  }
+  const form = event.currentTarget;
+  setText('sellerBannerStatus', 'Publishing banner...');
+  try {
+    let imageKey = '';
+    let imageUrl = '';
+    const file = form.image?.files?.[0];
+    if (file && String(file.type || '').startsWith('image/')) {
+      const uploaded = await api.uploadBannerImage(file);
+      imageKey = uploaded.key || '';
+      imageUrl = uploaded.url || '';
+    }
+
+    await api.createBanner({
+      title: form.title.value.trim(),
+      message: form.message.value.trim(),
+      linkUrl: (form.linkUrl.value || '/#marketplace').trim(),
+      buttonText: (form.buttonText.value || 'View').trim(),
+      scope: form.scope.value || 'local',
+      priority: Number(form.priority.value || 0),
+      isActive: Boolean(form.isActive.checked),
+      imageKey,
+      imageUrl
+    });
+
+    form.reset();
+    setText('sellerBannerStatus', 'Banner published.');
+    await refreshBanners();
+  } catch (error) {
+    setText('sellerBannerStatus', error.message || 'Unable to publish banner');
+  }
+});
+
+el('sellerBannerList')?.addEventListener('click', async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+
+  const viewBtn = target.closest('.seller-banner-view-btn');
+  if (viewBtn) {
+    const item = currentBanners.find((row) => Number(row.id) === Number(viewBtn.dataset.id));
+    if (!item) return;
+    window.alert(`${item.title}\n${item.message || ''}\n${item.linkUrl || '/#marketplace'}`);
+    return;
+  }
+
+  const editBtn = target.closest('.seller-banner-edit-btn');
+  if (editBtn) {
+    const item = currentBanners.find((row) => Number(row.id) === Number(editBtn.dataset.id));
+    if (!item) return;
+    const nextTitle = window.prompt('Banner title', item.title || '');
+    if (nextTitle === null) return;
+    const nextMessage = window.prompt('Banner text', item.message || '');
+    if (nextMessage === null) return;
+    const nextLink = window.prompt('Redirect URL', item.linkUrl || '/#marketplace');
+    if (nextLink === null) return;
+    try {
+      await api.updateBanner(item.id, {
+        title: nextTitle.trim(),
+        message: nextMessage.trim(),
+        linkUrl: nextLink.trim() || '/#marketplace'
+      });
+      setText('sellerBannerStatus', `Banner #${item.id} updated.`);
+      await refreshBanners();
+    } catch (error) {
+      setText('sellerBannerStatus', error.message || 'Unable to update banner');
+    }
+    return;
+  }
+
+  const deleteBtn = target.closest('.seller-banner-delete-btn');
+  if (deleteBtn) {
+    const item = currentBanners.find((row) => Number(row.id) === Number(deleteBtn.dataset.id));
+    if (!item) return;
+    const ok = window.confirm(`Delete banner "${item.title}"?`);
+    if (!ok) return;
+    try {
+      await api.deleteBanner(item.id);
+      setText('sellerBannerStatus', `Banner #${item.id} deleted.`);
+      await refreshBanners();
+    } catch (error) {
+      setText('sellerBannerStatus', error.message || 'Unable to delete banner');
     }
   }
 });
@@ -418,6 +655,7 @@ el('sellerLogoutBtn')?.addEventListener('click', async () => {
 
 setInterval(() => {
   if (isSellerAccount()) refreshListings().catch(() => null);
+  if (isBannerManager()) refreshBanners().catch(() => null);
 }, 20000);
 
 feedback = initFeedback({
@@ -434,7 +672,16 @@ window.addEventListener('keydown', unlockNotificationSound, { once: true });
 
 refreshAuth()
   .then(async () => {
-    await searchCities().catch(() => null);
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          await loadGeoOptions(position.coords.latitude, position.coords.longitude).catch(() => null);
+        },
+        () => null,
+        { maximumAge: 180000, timeout: 7000 }
+      );
+    }
     await refreshListings();
+    await refreshBanners();
   })
   .catch(() => null);
