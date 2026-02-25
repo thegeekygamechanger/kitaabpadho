@@ -32,6 +32,16 @@ export function initRealtime({ state, marketplace, community, notifications }) {
       debounceRefresh('notifications', () => notifications.refresh());
     });
 
+    nextSource.addEventListener('listing.updated', () => {
+      debounceRefresh('listings', () => marketplace.refreshListings());
+      debounceRefresh('notifications', () => notifications.refresh());
+    });
+
+    nextSource.addEventListener('listing.deleted', () => {
+      debounceRefresh('listings', () => marketplace.refreshListings());
+      debounceRefresh('notifications', () => notifications.refresh());
+    });
+
     nextSource.addEventListener('community.updated', () => {
       debounceRefresh('community', () => community.refreshPosts());
       debounceRefresh('notifications', () => notifications.refresh());

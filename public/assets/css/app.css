@@ -694,6 +694,33 @@ body {
   color: #2e4872;
 }
 
+.admin-crud-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.admin-mini-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.admin-mini-item {
+  border: 1px solid #d6e4ff;
+  border-radius: 10px;
+  padding: 0.55rem;
+  background: #fff;
+}
+
+.admin-mini-item h5 {
+  margin: 0 0 0.25rem;
+  font-size: 0.92rem;
+}
+
+.admin-mini-item p {
+  margin: 0;
+}
+
 @keyframes riseIn {
   from {
     transform: translateY(8px);
@@ -746,6 +773,10 @@ body {
 
   .admin-summary {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .admin-crud-grid {
+    grid-template-columns: 1fr;
   }
 }
 

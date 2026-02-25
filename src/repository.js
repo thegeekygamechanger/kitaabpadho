@@ -831,6 +831,94 @@ function createRepository(queryFn) {
       return result.rows[0];
     },
 
+    async updateListing({
+      listingId,
+      actorId,
+      isAdmin = false,
+      title,
+      description,
+      category,
+      listingType,
+      sellerType = 'student',
+      deliveryMode = 'peer_to_peer',
+      paymentModes = ['cod'],
+      price,
+      city,
+      areaCode,
+      latitude,
+      longitude
+    }) {
+      const result = await run(
+        `UPDATE listings
+         SET
+          title = $4,
+          description = $5,
+          category = $6,
+          listing_type = $7,
+          seller_type = $8,
+          delivery_mode = $9,
+          payment_modes = $10,
+          price = $11,
+          city = $12,
+          area_code = $13,
+          latitude = $14,
+          longitude = $15
+         WHERE id = $1
+           AND ($2::boolean OR created_by = $3)
+         RETURNING
+          id,
+          title,
+          description,
+          category,
+          listing_type AS "listingType",
+          seller_type AS "sellerType",
+          delivery_mode AS "deliveryMode",
+          payment_modes AS "paymentModes",
+          price,
+          city,
+          area_code AS "areaCode",
+          latitude,
+          longitude,
+          created_by AS "createdBy",
+          created_at AS "createdAt"`,
+        [
+          listingId,
+          Boolean(isAdmin),
+          actorId,
+          title,
+          description,
+          category,
+          listingType,
+          sellerType,
+          deliveryMode,
+          paymentModes,
+          price,
+          city,
+          areaCode,
+          latitude,
+          longitude
+        ]
+      );
+      return result.rows[0] || null;
+    },
+
+    async deleteListing({ listingId, actorId, isAdmin = false }) {
+      const result = await run(
+        `DELETE FROM listings
+         WHERE id = $1
+           AND ($2::boolean OR created_by = $3)
+         RETURNING
+          id,
+          title,
+          category,
+          listing_type AS "listingType",
+          city,
+          created_by AS "createdBy"`,
+        [listingId, Boolean(isAdmin), actorId]
+      );
+      return result.rows[0] || null;
+    },
+
     async notifyAllUsersAboutListing({ actorId, listingId, title, city, listingType, category }) {
       const result = await run(
         `INSERT INTO notifications (user_id, kind, title, body, entity_type, entity_id)
@@ -1059,6 +1147,76 @@ function createRepository(queryFn) {
         [postId, createdBy, content]
       );
       return result.rows[0];
+    },
+
+    async getCommunityCommentById(commentId) {
+      const result = await run(
+        `SELECT
+          cm.id,
+          cm.post_id AS "postId",
+          cm.created_by AS "createdBy",
+          cm.comment AS content,
+          cm.created_at AS "createdAt",
+          u.full_name AS "authorName"
+         FROM community_comments cm
+         INNER JOIN users u ON u.id = cm.created_by
+         WHERE cm.id = $1
+         LIMIT 1`,
+        [commentId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async updateCommunityComment({ commentId, actorId, isAdmin = false, content }) {
+      const result = await run(
+        `UPDATE community_comments
+         SET comment = $4
+         WHERE id = $1
+           AND ($2::boolean OR created_by = $3)
+         RETURNING
+          id,
+          post_id AS "postId",
+          created_by AS "createdBy",
+          comment AS content,
+          created_at AS "createdAt"`,
+        [commentId, Boolean(isAdmin), actorId, content]
+      );
+      return result.rows[0] || null;
+    },
+
+    async updateCommunityPost({ postId, actorId, isAdmin = false, title, content, categoryId }) {
+      const result = await run(
+        `UPDATE community_posts
+         SET
+          title = $4,
+          content = $5,
+          category_id = $6
+         WHERE id = $1
+           AND ($2::boolean OR created_by = $3)
+         RETURNING
+          id,
+          title,
+          content,
+          category_id AS "categoryId",
+          created_by AS "createdBy",
+          created_at AS "createdAt"`,
+        [postId, Boolean(isAdmin), actorId, title, content, categoryId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async deleteCommunityPost({ postId, actorId, isAdmin = false }) {
+      const result = await run(
+        `DELETE FROM community_posts
+         WHERE id = $1
+           AND ($2::boolean OR created_by = $3)
+         RETURNING
+          id,
+          title,
+          created_by AS "createdBy"`,
+        [postId, Boolean(isAdmin), actorId]
+      );
+      return result.rows[0] || null;
     },
 
     async createUserNotification({ userId, kind, title, body = '', entityType = '', entityId = null }) {
@@ -1364,12 +1522,80 @@ function createRepository(queryFn) {
       return result.rows[0] || null;
     },
 
-    async deleteCommunityComment(commentId, userId) {
+    async getDeliveryJobById(jobId) {
+      const result = await run(
+        `SELECT
+          dj.id,
+          dj.listing_id AS "listingId",
+          dj.pickup_city AS "pickupCity",
+          dj.pickup_area_code AS "pickupAreaCode",
+          dj.pickup_latitude AS "pickupLatitude",
+          dj.pickup_longitude AS "pickupLongitude",
+          dj.delivery_mode AS "deliveryMode",
+          dj.status,
+          dj.created_by AS "createdBy",
+          dj.claimed_by AS "claimedBy",
+          dj.created_at AS "createdAt",
+          dj.updated_at AS "updatedAt"
+         FROM delivery_jobs dj
+         WHERE dj.id = $1
+         LIMIT 1`,
+        [jobId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async updateDeliveryJobStatus({ jobId, actorId, isAdmin = false, status }) {
+      const result = await run(
+        `UPDATE delivery_jobs
+         SET
+          status = $4,
+          claimed_by = CASE
+            WHEN $4 = 'open' THEN NULL
+            WHEN $4 = 'claimed' AND claimed_by IS NULL THEN $3
+            ELSE claimed_by
+          END,
+          updated_at = NOW()
+         WHERE id = $1
+           AND ($2::boolean OR created_by = $3 OR claimed_by = $3)
+         RETURNING
+          id,
+          listing_id AS "listingId",
+          pickup_city AS "pickupCity",
+          pickup_area_code AS "pickupAreaCode",
+          pickup_latitude AS "pickupLatitude",
+          pickup_longitude AS "pickupLongitude",
+          delivery_mode AS "deliveryMode",
+          status,
+          created_by AS "createdBy",
+          claimed_by AS "claimedBy",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"`,
+        [jobId, Boolean(isAdmin), actorId, status]
+      );
+      return result.rows[0] || null;
+    },
+
+    async deleteDeliveryJob({ jobId, actorId, isAdmin = false }) {
+      const result = await run(
+        `DELETE FROM delivery_jobs
+         WHERE id = $1
+           AND ($2::boolean OR created_by = $3 OR claimed_by = $3)
+         RETURNING
+          id,
+          listing_id AS "listingId",
+          created_by AS "createdBy"`,
+        [jobId, Boolean(isAdmin), actorId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async deleteCommunityComment(commentId, userId, isAdmin = false) {
       const result = await run(
         `DELETE FROM community_comments
-         WHERE id = $1 AND created_by = $2
-         RETURNING id`,
-        [commentId, userId]
+         WHERE id = $1 AND ($3::boolean OR created_by = $2)
+         RETURNING id, post_id AS "postId", created_by AS "createdBy"`,
+        [commentId, userId, Boolean(isAdmin)]
       );
       return result.rows[0] || null;
     }

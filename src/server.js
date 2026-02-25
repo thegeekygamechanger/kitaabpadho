@@ -25,6 +25,7 @@ const {
 const { sanitizeText } = require('./sanitize');
 const {
   listingSchema,
+  listingUpdateSchema,
   listingQuerySchema,
   authRegisterSchema,
   authLoginSchema,
@@ -32,7 +33,9 @@ const {
   changePasswordSchema,
   totpEnableSchema,
   communityPostSchema,
+  communityPostUpdateSchema,
   communityCommentSchema,
+  communityCommentUpdateSchema,
   communityListQuerySchema,
   notificationsQuerySchema,
   adminActionQuerySchema,
@@ -44,6 +47,7 @@ const {
   pushToggleSchema,
   pushSubscribeSchema,
   deliveryJobsQuerySchema,
+  deliveryJobStatusSchema,
   razorpayOrderSchema
 } = require('./validators');
 
@@ -242,6 +246,18 @@ function createApp(deps = {}) {
       return next();
     } catch (error) {
       return res.status(500).json({ error: error.message });
+    }
+  };
+
+  const resolveActorPermissions = async (req) => {
+    if (!req.user?.id) return { isAdmin: false };
+    try {
+      const freshUser = await repository.findUserById(req.user.id);
+      if (!freshUser) return { isAdmin: false };
+      req.user = { ...req.user, role: freshUser.role, email: freshUser.email, fullName: freshUser.fullName };
+      return { isAdmin: freshUser.role === 'admin' };
+    } catch {
+      return { isAdmin: req.user?.role === 'admin' };
     }
   };
 
@@ -1023,6 +1039,112 @@ function createApp(deps = {}) {
     }
   });
 
+  app.put('/api/listings/:id', listingWriteLimiter, requireAuth, async (req, res) => {
+    const listingId = parseId(req.params.id);
+    if (!listingId) return res.status(400).json({ error: 'Invalid listing id' });
+
+    try {
+      if (typeof repository.updateListing !== 'function') {
+        return res.status(500).json({ error: 'Listing update is not available' });
+      }
+      const existing = await repository.getListingById(listingId);
+      if (!existing) return res.status(404).json({ error: 'Listing not found' });
+
+      const { isAdmin } = await resolveActorPermissions(req);
+      if (!isAdmin && Number(existing.createdBy) !== Number(req.user.id)) {
+        return res.status(403).json({ error: 'Only owner or admin can update this listing' });
+      }
+
+      const body = listingUpdateSchema.parse(req.body);
+      const updated = await repository.updateListing({
+        listingId,
+        actorId: req.user.id,
+        isAdmin,
+        title: sanitizeText(body.title, 120),
+        description: sanitizeText(body.description, 1500),
+        category: body.category,
+        listingType: body.listingType,
+        sellerType: body.sellerType,
+        deliveryMode: body.deliveryMode,
+        paymentModes: body.paymentModes,
+        price: Number(body.price),
+        city: sanitizeText(body.city, 100),
+        areaCode: body.areaCode,
+        latitude: Number(body.latitude),
+        longitude: Number(body.longitude)
+      });
+      if (!updated) return res.status(404).json({ error: 'Listing not found or forbidden' });
+
+      await logProjectAction(req, {
+        actionType: 'listing.update',
+        entityType: 'listing',
+        entityId: listingId,
+        summary: 'Marketplace listing updated',
+        details: {
+          listingType: updated.listingType,
+          category: updated.category,
+          areaCode: updated.areaCode,
+          sellerType: updated.sellerType,
+          deliveryMode: updated.deliveryMode
+        }
+      });
+
+      publishRealtimeEvent('listing.updated', { id: listingId });
+      publishRealtimeEvent('notifications.invalidate', { source: 'listing.update' });
+
+      const fullListing = await repository.getListingById(listingId).catch(() => null);
+      return res.json(fullListing || updated);
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete('/api/listings/:id', listingWriteLimiter, requireAuth, async (req, res) => {
+    const listingId = parseId(req.params.id);
+    if (!listingId) return res.status(400).json({ error: 'Invalid listing id' });
+
+    try {
+      if (typeof repository.deleteListing !== 'function') {
+        return res.status(500).json({ error: 'Listing delete is not available' });
+      }
+      const existing = await repository.getListingById(listingId);
+      if (!existing) return res.status(404).json({ error: 'Listing not found' });
+
+      const { isAdmin } = await resolveActorPermissions(req);
+      if (!isAdmin && Number(existing.createdBy) !== Number(req.user.id)) {
+        return res.status(403).json({ error: 'Only owner or admin can delete this listing' });
+      }
+
+      const deleted = await repository.deleteListing({
+        listingId,
+        actorId: req.user.id,
+        isAdmin
+      });
+      if (!deleted) return res.status(404).json({ error: 'Listing not found or forbidden' });
+
+      await logProjectAction(req, {
+        actionType: 'listing.delete',
+        entityType: 'listing',
+        entityId: listingId,
+        summary: 'Marketplace listing deleted',
+        details: {
+          title: existing.title,
+          category: existing.category,
+          listingType: existing.listingType
+        }
+      });
+
+      publishRealtimeEvent('listing.deleted', { id: listingId });
+      publishRealtimeEvent('notifications.invalidate', { source: 'listing.delete' });
+      publishRealtimeEvent('delivery.updated', { type: 'delivery_job_deleted_by_listing', listingId });
+
+      return res.json({ ok: true, deleted });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post('/api/listings/:id/media', listingWriteLimiter, requireAuth, upload.single('file'), async (req, res) => {
     const listingId = parseId(req.params.id);
     if (!listingId) return res.status(400).json({ error: 'Invalid listing id' });
@@ -1173,6 +1295,94 @@ function createApp(deps = {}) {
     }
   });
 
+  app.put('/api/community/posts/:id', communityWriteLimiter, requireAuth, async (req, res) => {
+    const postId = parseId(req.params.id);
+    if (!postId) return res.status(400).json({ error: 'Invalid post id' });
+
+    try {
+      if (typeof repository.updateCommunityPost !== 'function') {
+        return res.status(500).json({ error: 'Community post update is not available' });
+      }
+
+      const existing = await repository.getCommunityPostById(postId);
+      if (!existing) return res.status(404).json({ error: 'Post not found' });
+
+      const { isAdmin } = await resolveActorPermissions(req);
+      if (!isAdmin && Number(existing.createdBy) !== Number(req.user.id)) {
+        return res.status(403).json({ error: 'Only owner or admin can update this post' });
+      }
+
+      const body = communityPostUpdateSchema.parse(req.body);
+      const category = await repository.findCommunityCategoryBySlug(body.categorySlug);
+      if (!category) return res.status(400).json({ error: 'Invalid categorySlug' });
+
+      const updated = await repository.updateCommunityPost({
+        postId,
+        actorId: req.user.id,
+        isAdmin,
+        title: sanitizeText(body.title, 160),
+        content: sanitizeText(body.content, 4000),
+        categoryId: category.id
+      });
+      if (!updated) return res.status(404).json({ error: 'Post not found or forbidden' });
+
+      await logProjectAction(req, {
+        actionType: 'community.post_update',
+        entityType: 'community_post',
+        entityId: postId,
+        summary: 'Community post updated',
+        details: { categorySlug: body.categorySlug }
+      });
+
+      const fullPost = await repository.getCommunityPostById(postId);
+      publishRealtimeEvent('community.updated', { type: 'post_updated', postId });
+      publishRealtimeEvent('notifications.invalidate', { source: 'community.post_update' });
+      return res.json(fullPost || updated);
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete('/api/community/posts/:id', communityWriteLimiter, requireAuth, async (req, res) => {
+    const postId = parseId(req.params.id);
+    if (!postId) return res.status(400).json({ error: 'Invalid post id' });
+
+    try {
+      if (typeof repository.deleteCommunityPost !== 'function') {
+        return res.status(500).json({ error: 'Community post delete is not available' });
+      }
+
+      const existing = await repository.getCommunityPostById(postId);
+      if (!existing) return res.status(404).json({ error: 'Post not found' });
+
+      const { isAdmin } = await resolveActorPermissions(req);
+      if (!isAdmin && Number(existing.createdBy) !== Number(req.user.id)) {
+        return res.status(403).json({ error: 'Only owner or admin can delete this post' });
+      }
+
+      const deleted = await repository.deleteCommunityPost({
+        postId,
+        actorId: req.user.id,
+        isAdmin
+      });
+      if (!deleted) return res.status(404).json({ error: 'Post not found or forbidden' });
+
+      await logProjectAction(req, {
+        actionType: 'community.post_delete',
+        entityType: 'community_post',
+        entityId: postId,
+        summary: 'Community post deleted'
+      });
+
+      publishRealtimeEvent('community.updated', { type: 'post_deleted', postId });
+      publishRealtimeEvent('notifications.invalidate', { source: 'community.post_delete' });
+      return res.json({ ok: true, deleted });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post('/api/community/posts/:id/comments', communityWriteLimiter, requireAuth, async (req, res) => {
     const postId = parseId(req.params.id);
     if (!postId) return res.status(400).json({ error: 'Invalid post id' });
@@ -1222,12 +1432,71 @@ function createApp(deps = {}) {
     }
   });
 
+  app.put('/api/community/comments/:id', communityWriteLimiter, requireAuth, async (req, res) => {
+    const commentId = parseId(req.params.id);
+    if (!commentId) return res.status(400).json({ error: 'Invalid comment id' });
+
+    try {
+      if (typeof repository.updateCommunityComment !== 'function') {
+        return res.status(500).json({ error: 'Community comment update is not available' });
+      }
+
+      const existing =
+        typeof repository.getCommunityCommentById === 'function'
+          ? await repository.getCommunityCommentById(commentId)
+          : null;
+      if (existing === null && typeof repository.getCommunityCommentById === 'function') {
+        return res.status(404).json({ error: 'Comment not found' });
+      }
+
+      const { isAdmin } = await resolveActorPermissions(req);
+      if (existing && !isAdmin && Number(existing.createdBy) !== Number(req.user.id)) {
+        return res.status(403).json({ error: 'Only owner or admin can update this comment' });
+      }
+
+      const body = communityCommentUpdateSchema.parse(req.body);
+      const updated = await repository.updateCommunityComment({
+        commentId,
+        actorId: req.user.id,
+        isAdmin,
+        content: sanitizeText(body.content, 1000)
+      });
+      if (!updated) return res.status(404).json({ error: 'Comment not found or forbidden' });
+
+      await logProjectAction(req, {
+        actionType: 'community.comment_update',
+        entityType: 'community_comment',
+        entityId: commentId,
+        summary: 'Community comment updated',
+        details: { postId: updated.postId }
+      });
+      publishRealtimeEvent('community.updated', { type: 'comment_updated', commentId, postId: updated.postId });
+      return res.json(updated);
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
   app.delete('/api/community/comments/:id', communityWriteLimiter, requireAuth, async (req, res) => {
     const commentId = parseId(req.params.id);
     if (!commentId) return res.status(400).json({ error: 'Invalid comment id' });
 
     try {
-      const deleted = await repository.deleteCommunityComment(commentId, req.user.id);
+      const existing =
+        typeof repository.getCommunityCommentById === 'function'
+          ? await repository.getCommunityCommentById(commentId)
+          : null;
+      if (existing === null && typeof repository.getCommunityCommentById === 'function') {
+        return res.status(404).json({ error: 'Comment not found' });
+      }
+
+      const { isAdmin } = await resolveActorPermissions(req);
+      if (existing && !isAdmin && Number(existing.createdBy) !== Number(req.user.id)) {
+        return res.status(403).json({ error: 'Only owner or admin can delete this comment' });
+      }
+
+      const deleted = await repository.deleteCommunityComment(commentId, req.user.id, isAdmin);
       if (!deleted) return res.status(404).json({ error: 'Comment not found or forbidden' });
       await logProjectAction(req, {
         actionType: 'community.comment_delete',
@@ -1235,7 +1504,7 @@ function createApp(deps = {}) {
         entityId: commentId,
         summary: 'Community comment deleted'
       });
-      publishRealtimeEvent('community.updated', { type: 'comment_deleted', commentId });
+      publishRealtimeEvent('community.updated', { type: 'comment_deleted', commentId, postId: deleted.postId });
       return res.json({ ok: true });
     } catch (error) {
       return res.status(500).json({ error: error.message });
@@ -1259,6 +1528,143 @@ function createApp(deps = {}) {
       });
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid query' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/delivery/jobs/:id', requireAuth, async (req, res) => {
+    const jobId = parseId(req.params.id);
+    if (!jobId) return res.status(400).json({ error: 'Invalid delivery job id' });
+
+    try {
+      if (typeof repository.getDeliveryJobById !== 'function') {
+        return res.status(500).json({ error: 'Delivery job view is not available' });
+      }
+      const job = await repository.getDeliveryJobById(jobId);
+      if (!job) return res.status(404).json({ error: 'Delivery job not found' });
+      return res.json(job);
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put('/api/delivery/jobs/:id/status', requireAuth, async (req, res) => {
+    const jobId = parseId(req.params.id);
+    if (!jobId) return res.status(400).json({ error: 'Invalid delivery job id' });
+    try {
+      if (typeof repository.updateDeliveryJobStatus !== 'function' || typeof repository.getDeliveryJobById !== 'function') {
+        return res.status(500).json({ error: 'Delivery job status update is not available' });
+      }
+
+      const existing = await repository.getDeliveryJobById(jobId);
+      if (!existing) return res.status(404).json({ error: 'Delivery job not found' });
+
+      const { isAdmin } = await resolveActorPermissions(req);
+      const canManage =
+        isAdmin ||
+        Number(existing.createdBy) === Number(req.user.id) ||
+        Number(existing.claimedBy) === Number(req.user.id);
+      if (!canManage) return res.status(403).json({ error: 'Only assigned user, creator, or admin can update status' });
+
+      const body = deliveryJobStatusSchema.parse(req.body);
+      const updated = await repository.updateDeliveryJobStatus({
+        jobId,
+        actorId: req.user.id,
+        isAdmin,
+        status: body.status
+      });
+      if (!updated) return res.status(404).json({ error: 'Delivery job not found or forbidden' });
+
+      await logProjectAction(req, {
+        actionType: 'delivery.job_status_update',
+        entityType: 'delivery_job',
+        entityId: jobId,
+        summary: 'Delivery job status updated',
+        details: { previousStatus: existing.status, status: updated.status, listingId: updated.listingId }
+      });
+
+      if (typeof repository.createUserNotification === 'function') {
+        if (updated.createdBy && Number(updated.createdBy) !== Number(req.user.id)) {
+          await repository.createUserNotification({
+            userId: updated.createdBy,
+            kind: 'delivery_status',
+            title: 'Delivery job status updated',
+            body: `Listing #${updated.listingId} is now ${updated.status}.`,
+            entityType: 'delivery_job',
+            entityId: updated.id
+          });
+          publishRealtimeEvent('notifications.invalidate', { source: 'delivery.status_update' }, updated.createdBy);
+          await pushToUser(updated.createdBy, {
+            title: 'Delivery status update',
+            body: `Listing #${updated.listingId} is now ${updated.status}.`,
+            url: `${appConfig.appBaseUrl}/delivery`
+          });
+        }
+        if (updated.claimedBy && Number(updated.claimedBy) !== Number(req.user.id)) {
+          await repository.createUserNotification({
+            userId: updated.claimedBy,
+            kind: 'delivery_status',
+            title: 'Delivery job status updated',
+            body: `Your delivery job #${updated.id} is now ${updated.status}.`,
+            entityType: 'delivery_job',
+            entityId: updated.id
+          });
+          publishRealtimeEvent('notifications.invalidate', { source: 'delivery.status_update' }, updated.claimedBy);
+        }
+      }
+
+      publishRealtimeEvent('delivery.updated', {
+        type: 'delivery_job_status_updated',
+        deliveryJobId: updated.id,
+        status: updated.status
+      });
+
+      return res.json({ ok: true, job: updated });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete('/api/delivery/jobs/:id', requireAuth, async (req, res) => {
+    const jobId = parseId(req.params.id);
+    if (!jobId) return res.status(400).json({ error: 'Invalid delivery job id' });
+    try {
+      if (typeof repository.deleteDeliveryJob !== 'function' || typeof repository.getDeliveryJobById !== 'function') {
+        return res.status(500).json({ error: 'Delivery job delete is not available' });
+      }
+
+      const existing = await repository.getDeliveryJobById(jobId);
+      if (!existing) return res.status(404).json({ error: 'Delivery job not found' });
+
+      const { isAdmin } = await resolveActorPermissions(req);
+      const canManage =
+        isAdmin ||
+        Number(existing.createdBy) === Number(req.user.id) ||
+        Number(existing.claimedBy) === Number(req.user.id);
+      if (!canManage) return res.status(403).json({ error: 'Only assigned user, creator, or admin can delete job' });
+
+      const deleted = await repository.deleteDeliveryJob({
+        jobId,
+        actorId: req.user.id,
+        isAdmin
+      });
+      if (!deleted) return res.status(404).json({ error: 'Delivery job not found or forbidden' });
+
+      await logProjectAction(req, {
+        actionType: 'delivery.job_delete',
+        entityType: 'delivery_job',
+        entityId: jobId,
+        summary: 'Delivery job deleted',
+        details: { listingId: deleted.listingId }
+      });
+
+      publishRealtimeEvent('delivery.updated', { type: 'delivery_job_deleted', deliveryJobId: jobId });
+      if (deleted.createdBy) {
+        publishRealtimeEvent('notifications.invalidate', { source: 'delivery.delete' }, deleted.createdBy);
+      }
+      return res.json({ ok: true, deleted });
+    } catch (error) {
       return res.status(500).json({ error: error.message });
     }
   });

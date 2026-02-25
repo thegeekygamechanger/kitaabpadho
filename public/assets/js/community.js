@@ -11,6 +11,11 @@ export function initCommunity({ state, openAuthModal }) {
   const closeDetailBtn = el('closeCommunityDetailBtn');
   const detailNode = el('communityDetailContent');
 
+  function canManageByOwnerId(ownerId) {
+    if (!state.user) return false;
+    return state.user.role === 'admin' || Number(ownerId) === Number(state.user.id);
+  }
+
   function postFilters() {
     return {
       q: state.community.q,
@@ -83,19 +88,23 @@ export function initCommunity({ state, openAuthModal }) {
   async function openDiscussion(postId) {
     try {
       const post = await api.communityPostById(postId);
+      const canManagePost = canManageByOwnerId(post.createdBy);
       const comments = post.comments || [];
       const commentsHtml =
         comments.length === 0
           ? '<p class="muted">No comments yet.</p>'
           : comments
               .map((comment) => {
-                const canDelete = state.user && Number(comment.createdBy) === Number(state.user.id);
+                const canManageComment = canManageByOwnerId(comment.createdBy);
                 return `<article style="padding:0.55rem;border:1px solid #d6e3ff;border-radius:10px;margin-bottom:0.5rem">
                   <strong>${escapeHtml(comment.authorName || 'Member')}</strong>
                   <p>${escapeHtml(comment.content)}</p>
                   ${
-                    canDelete
-                      ? `<button class="kb-btn kb-btn-ghost delete-comment-btn" data-id="${comment.id}" data-post-id="${post.id}" type="button">Delete</button>`
+                    canManageComment
+                      ? `<div class="drawer-actions">
+                          <button class="kb-btn kb-btn-ghost edit-comment-btn" data-id="${comment.id}" data-post-id="${post.id}" type="button">Edit</button>
+                          <button class="kb-btn kb-btn-ghost delete-comment-btn" data-id="${comment.id}" data-post-id="${post.id}" type="button">Delete</button>
+                        </div>`
                       : ''
                   }
                 </article>`;
@@ -107,6 +116,14 @@ export function initCommunity({ state, openAuthModal }) {
         <h3>${escapeHtml(post.title)}</h3>
         <p class="muted">${escapeHtml(post.categoryName || '')} | ${escapeHtml(post.authorName || 'Member')}</p>
         <p>${escapeHtml(post.content)}</p>
+        ${
+          canManagePost
+            ? `<div class="drawer-actions" style="margin:0.5rem 0 0.7rem">
+                 <button class="kb-btn kb-btn-dark edit-post-btn" data-id="${post.id}" type="button">Edit Topic</button>
+                 <button class="kb-btn kb-btn-dark delete-post-btn" data-id="${post.id}" type="button">Delete Topic</button>
+               </div>`
+            : ''
+        }
         <hr />
         <h4>Comments</h4>
         <div>${commentsHtml}</div>
@@ -181,6 +198,63 @@ export function initCommunity({ state, openAuthModal }) {
   detailNode?.addEventListener('click', async (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
+
+    const editPostBtn = target.closest('.edit-post-btn');
+    if (editPostBtn) {
+      const postId = editPostBtn.dataset.id;
+      try {
+        const post = await api.communityPostById(postId);
+        const nextTitle = window.prompt('Update topic title', post.title || '');
+        if (nextTitle === null) return;
+        const nextContent = window.prompt('Update topic content', post.content || '');
+        if (nextContent === null) return;
+        const nextCategory = window.prompt('Update category slug', post.categorySlug || '');
+        if (nextCategory === null) return;
+
+        await api.updateCommunityPost(postId, {
+          title: nextTitle.trim(),
+          content: nextContent.trim(),
+          categorySlug: nextCategory.trim()
+        });
+        await openDiscussion(postId);
+        await refreshPosts();
+      } catch (error) {
+        setText('commentStatus', error.message || 'Unable to update topic');
+      }
+      return;
+    }
+
+    const deletePostBtn = target.closest('.delete-post-btn');
+    if (deletePostBtn) {
+      const postId = deletePostBtn.dataset.id;
+      const ok = window.confirm('Delete this topic and all comments?');
+      if (!ok) return;
+      try {
+        await api.deleteCommunityPost(postId);
+        hideModal('communityDetailModal');
+        await refreshPosts();
+      } catch (error) {
+        setText('commentStatus', error.message || 'Unable to delete topic');
+      }
+      return;
+    }
+
+    const editCommentBtn = target.closest('.edit-comment-btn');
+    if (editCommentBtn) {
+      try {
+        const post = await api.communityPostById(editCommentBtn.dataset.postId);
+        const current = (post.comments || []).find((item) => Number(item.id) === Number(editCommentBtn.dataset.id));
+        const nextContent = window.prompt('Update comment', current?.content || '');
+        if (nextContent === null) return;
+        await api.updateCommunityComment(editCommentBtn.dataset.id, { content: nextContent.trim() });
+        await openDiscussion(editCommentBtn.dataset.postId);
+        await refreshPosts();
+      } catch (error) {
+        setText('commentStatus', error.message || 'Unable to update comment');
+      }
+      return;
+    }
+
     const button = target.closest('.delete-comment-btn');
     if (!button) return;
     try {

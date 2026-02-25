@@ -54,6 +54,30 @@
           <button id="adminApplyFiltersBtn" class="kb-btn kb-btn-dark" type="button">Apply</button>
         </div>
         <div id="adminActionsList" class="admin-actions"></div>
+
+        <div class="panel-head" style="margin-top:0.9rem">
+          <h3>Resource CRUD</h3>
+          <button id="adminCrudRefreshBtn" class="kb-btn kb-btn-ghost" type="button">Refresh Resources</button>
+        </div>
+        <p id="adminCrudStatus" class="muted">View, update, and delete latest listings, posts, comments, and delivery jobs.</p>
+        <div class="admin-crud-grid">
+          <section class="drawer">
+            <h4>Listings</h4>
+            <div id="adminCrudListings"></div>
+          </section>
+          <section class="drawer">
+            <h4>Community Posts</h4>
+            <div id="adminCrudPosts"></div>
+          </section>
+          <section class="drawer">
+            <h4>Community Comments</h4>
+            <div id="adminCrudComments"></div>
+          </section>
+          <section class="drawer">
+            <h4>Delivery Jobs</h4>
+            <div id="adminCrudDelivery"></div>
+          </section>
+        </div>
       </section>
     </main>
 

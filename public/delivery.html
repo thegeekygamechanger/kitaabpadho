@@ -39,6 +39,13 @@
           <button class="kb-btn kb-btn-primary" type="submit">Login</button>
         </form>
         <div class="drawer-actions">
+          <select id="deliveryStatusFilter" class="kb-select">
+            <option value="open">Open</option>
+            <option value="claimed">Claimed</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="all">All</option>
+          </select>
           <button id="detectDeliveryGpsBtn" class="kb-btn kb-btn-ghost" type="button">Use GPS</button>
           <button id="deliveryRefreshBtn" class="kb-btn kb-btn-dark" type="button">Refresh Jobs</button>
         </div>

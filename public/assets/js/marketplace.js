@@ -28,6 +28,12 @@ export function initMarketplace({ state, openAuthModal }) {
   const applyListingFiltersBtn = el('applyListingFiltersBtn');
   const closeListingDetailBtn = el('closeListingDetailBtn');
   const listingDetailContent = el('listingDetailContent');
+  let currentListing = null;
+
+  function canManageListing(listing) {
+    if (!state.user || !listing) return false;
+    return state.user.role === 'admin' || Number(listing.createdBy) === Number(state.user.id);
+  }
 
   function filtersFromState() {
     const filters = {
@@ -116,6 +122,8 @@ export function initMarketplace({ state, openAuthModal }) {
   async function openListingDetails(listingId) {
     try {
       const listing = await api.listingById(listingId);
+      currentListing = listing;
+      const canManage = canManageListing(listing);
       const media = Array.isArray(listing.media) ? listing.media : [];
       const mediaHtml =
         media.length === 0
@@ -150,11 +158,18 @@ export function initMarketplace({ state, openAuthModal }) {
           <button class="kb-btn kb-btn-primary razorpay-order-btn" data-id="${listing.id}" data-amount="${Number(listing.price || 0)}" type="button">
             Create Razorpay Order
           </button>
+          ${
+            canManage
+              ? `<button class="kb-btn kb-btn-dark edit-listing-btn" data-id="${listing.id}" type="button">Edit</button>
+                 <button class="kb-btn kb-btn-dark delete-listing-btn" data-id="${listing.id}" type="button">Delete</button>`
+              : ''
+          }
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:0.6rem">${mediaHtml}</div>
       `;
       showModal('listingDetailModal');
     } catch (error) {
+      currentListing = null;
       listingDetailContent.innerHTML = `<p class="state-error">${escapeHtml(error.message)}</p>`;
       showModal('listingDetailModal');
     }
@@ -236,26 +251,87 @@ export function initMarketplace({ state, openAuthModal }) {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
     const button = target.closest('.razorpay-order-btn');
-    if (!button) return;
-    try {
-      const amount = Number(button.dataset.amount || 0);
-      const listingId = button.dataset.id || '';
-      const result = await api.createRazorpayOrder({
-        amount,
-        receipt: `listing-${listingId}-${Date.now()}`
-      });
-      window.alert(`Razorpay order created: ${result.order?.id || 'N/A'}`);
-    } catch (error) {
-      window.alert(error.message || 'Unable to create Razorpay order');
+    if (button) {
+      try {
+        const amount = Number(button.dataset.amount || 0);
+        const listingId = button.dataset.id || '';
+        const result = await api.createRazorpayOrder({
+          amount,
+          receipt: `listing-${listingId}-${Date.now()}`
+        });
+        window.alert(`Razorpay order created: ${result.order?.id || 'N/A'}`);
+      } catch (error) {
+        window.alert(error.message || 'Unable to create Razorpay order');
+      }
+      return;
+    }
+
+    const editBtn = target.closest('.edit-listing-btn');
+    if (editBtn) {
+      if (!currentListing || !canManageListing(currentListing)) return;
+      const nextTitle = window.prompt('Update title', currentListing.title || '');
+      if (nextTitle === null) return;
+      const nextDescription = window.prompt('Update description', currentListing.description || '');
+      if (nextDescription === null) return;
+      const nextPriceRaw = window.prompt('Update price (INR)', String(currentListing.price || 0));
+      if (nextPriceRaw === null) return;
+      const nextCity = window.prompt('Update city', currentListing.city || '');
+      if (nextCity === null) return;
+
+      const nextPrice = Number(nextPriceRaw);
+      if (!Number.isFinite(nextPrice) || nextPrice < 0) {
+        window.alert('Invalid price');
+        return;
+      }
+
+      try {
+        await api.updateListing(currentListing.id, {
+          title: nextTitle.trim() || currentListing.title,
+          description: nextDescription.trim() || currentListing.description,
+          category: currentListing.category,
+          listingType: currentListing.listingType,
+          sellerType: currentListing.sellerType || 'student',
+          deliveryMode: currentListing.deliveryMode || 'peer_to_peer',
+          paymentModes: Array.isArray(currentListing.paymentModes) && currentListing.paymentModes.length ? currentListing.paymentModes : ['cod'],
+          price: nextPrice,
+          city: nextCity.trim() || currentListing.city || 'Unknown',
+          areaCode: currentListing.areaCode || 'other',
+          latitude: Number(currentListing.latitude),
+          longitude: Number(currentListing.longitude)
+        });
+        await refreshListings();
+        await openListingDetails(currentListing.id);
+      } catch (error) {
+        window.alert(error.message || 'Unable to update listing');
+      }
+      return;
+    }
+
+    const deleteBtn = target.closest('.delete-listing-btn');
+    if (deleteBtn) {
+      if (!currentListing || !canManageListing(currentListing)) return;
+      const ok = window.confirm(`Delete listing "${currentListing.title}"?`);
+      if (!ok) return;
+      try {
+        await api.deleteListing(currentListing.id);
+        hideModal('listingDetailModal');
+        currentListing = null;
+        await refreshListings();
+      } catch (error) {
+        window.alert(error.message || 'Unable to delete listing');
+      }
     }
   });
 
-  closeListingDetailBtn?.addEventListener('click', () => hideModal('listingDetailModal'));
+  closeListingDetailBtn?.addEventListener('click', () => {
+    currentListing = null;
+    hideModal('listingDetailModal');
+  });
 
   syncControlsFromState();
   syncListingTypeTabs();
 
-    return {
+  return {
     refreshListings,
     setSearchQuery(query) {
       state.marketplace.q = query;

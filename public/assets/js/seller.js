@@ -11,6 +11,12 @@ function setText(id, value) {
 }
 
 let currentUser = null;
+let currentListings = [];
+
+function canManageListing(item) {
+  if (!currentUser || !item) return false;
+  return currentUser.role === 'admin' || Number(item.createdBy) === Number(currentUser.id);
+}
 
 async function refreshAuth() {
   try {
@@ -42,6 +48,15 @@ function renderListings(items) {
         <h3 class="card-title">${escapeHtml(item.title || '')}</h3>
         <p class="muted">${escapeHtml(item.city || '')} | Delivery: ${escapeHtml(item.deliveryMode || '')}</p>
         <p class="card-price">${escapeHtml(formatInr(item.price))}</p>
+        <div class="card-actions">
+          <button class="kb-btn kb-btn-ghost seller-view-listing-btn" data-id="${item.id}" type="button">View</button>
+          ${
+            canManageListing(item)
+              ? `<button class="kb-btn kb-btn-dark seller-edit-listing-btn" data-id="${item.id}" type="button">Edit</button>
+                 <button class="kb-btn kb-btn-dark seller-delete-listing-btn" data-id="${item.id}" type="button">Delete</button>`
+              : ''
+          }
+        </div>
       </div>
     </article>`
     )
@@ -51,7 +66,8 @@ function renderListings(items) {
 async function refreshListings() {
   try {
     const result = await api.listListings({ limit: 24, offset: 0, sort: 'newest' });
-    renderListings(result.data || []);
+    currentListings = Array.isArray(result.data) ? result.data : [];
+    renderListings(currentListings);
   } catch (error) {
     setText('sellerListingStatus', error.message || 'Unable to load listings');
   }
@@ -107,6 +123,82 @@ el('sellerListingForm')?.addEventListener('submit', async (event) => {
 });
 
 el('sellerRefreshListingsBtn')?.addEventListener('click', () => refreshListings().catch(() => null));
+
+el('sellerListings')?.addEventListener('click', async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+
+  const viewBtn = target.closest('.seller-view-listing-btn');
+  if (viewBtn) {
+    const item = currentListings.find((row) => Number(row.id) === Number(viewBtn.dataset.id));
+    if (!item) return;
+    window.alert(
+      `${item.title}\n${item.city} | ${item.listingType}/${item.category}\n${formatInr(item.price)}\n${item.description || ''}`
+    );
+    return;
+  }
+
+  const editBtn = target.closest('.seller-edit-listing-btn');
+  if (editBtn) {
+    const item = currentListings.find((row) => Number(row.id) === Number(editBtn.dataset.id));
+    if (!item) return;
+
+    const title = window.prompt('Update title', item.title || '');
+    if (title === null) return;
+    const description = window.prompt('Update description', item.description || '');
+    if (description === null) return;
+    const priceRaw = window.prompt('Update price (INR)', String(item.price || 0));
+    if (priceRaw === null) return;
+    const city = window.prompt('Update city', item.city || '');
+    if (city === null) return;
+
+    const price = Number(priceRaw);
+    if (!Number.isFinite(price) || price < 0) {
+      setText('sellerListingStatus', 'Invalid price');
+      return;
+    }
+
+    setText('sellerListingStatus', 'Updating listing...');
+    try {
+      await api.updateListing(item.id, {
+        title: title.trim() || item.title,
+        description: description.trim() || item.description,
+        category: item.category,
+        listingType: item.listingType,
+        sellerType: item.sellerType || 'student',
+        deliveryMode: item.deliveryMode || 'peer_to_peer',
+        paymentModes: Array.isArray(item.paymentModes) && item.paymentModes.length ? item.paymentModes : ['cod'],
+        price,
+        city: city.trim() || item.city || 'Unknown',
+        areaCode: item.areaCode || 'other',
+        latitude: Number(item.latitude),
+        longitude: Number(item.longitude)
+      });
+      setText('sellerListingStatus', `Listing #${item.id} updated.`);
+      await refreshListings();
+    } catch (error) {
+      setText('sellerListingStatus', error.message || 'Unable to update listing');
+    }
+    return;
+  }
+
+  const deleteBtn = target.closest('.seller-delete-listing-btn');
+  if (deleteBtn) {
+    const item = currentListings.find((row) => Number(row.id) === Number(deleteBtn.dataset.id));
+    if (!item) return;
+    const ok = window.confirm(`Delete listing "${item.title}"?`);
+    if (!ok) return;
+
+    setText('sellerListingStatus', 'Deleting listing...');
+    try {
+      await api.deleteListing(item.id);
+      setText('sellerListingStatus', `Listing #${item.id} deleted.`);
+      await refreshListings();
+    } catch (error) {
+      setText('sellerListingStatus', error.message || 'Unable to delete listing');
+    }
+  }
+});
 
 el('sellerLogoutBtn')?.addEventListener('click', async () => {
   try {

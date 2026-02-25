@@ -35,6 +35,7 @@ const listingSchema = z.object({
   city: z.string().trim().min(2).max(100).optional().default('Unknown'),
   areaCode: areaCodeEnum.optional().default('other')
 });
+const listingUpdateSchema = listingSchema;
 
 const listingQuerySchema = z.object({
   q: z.string().trim().min(1).max(120).optional(),
@@ -125,10 +126,12 @@ const communityPostSchema = z.object({
   content: z.string().trim().min(10).max(4000),
   categorySlug: z.string().trim().min(2).max(64).regex(/^[a-z0-9-]+$/)
 });
+const communityPostUpdateSchema = communityPostSchema;
 
 const communityCommentSchema = z.object({
   content: z.string().trim().min(1).max(1000)
 });
+const communityCommentUpdateSchema = communityCommentSchema;
 
 const communityListQuerySchema = z.object({
   q: z.string().trim().min(1).max(120).optional(),
@@ -190,6 +193,9 @@ const deliveryJobsQuerySchema = z.object({
   limit: optionalNumber(z.number().int().min(1).max(100)).default(25),
   offset: optionalNumber(z.number().int().min(0).max(10000)).default(0)
 });
+const deliveryJobStatusSchema = z.object({
+  status: z.enum(['open', 'claimed', 'completed', 'cancelled'])
+});
 
 const razorpayOrderSchema = z.object({
   amount: z.number().positive(),
@@ -204,6 +210,7 @@ module.exports = {
   deliveryModes,
   paymentModes,
   listingSchema,
+  listingUpdateSchema,
   listingQuerySchema,
   authRegisterSchema,
   authLoginSchema,
@@ -211,7 +218,9 @@ module.exports = {
   changePasswordSchema,
   totpEnableSchema,
   communityPostSchema,
+  communityPostUpdateSchema,
   communityCommentSchema,
+  communityCommentUpdateSchema,
   communityListQuerySchema,
   notificationsQuerySchema,
   adminActionQuerySchema,
@@ -223,5 +232,6 @@ module.exports = {
   pushToggleSchema,
   pushSubscribeSchema,
   deliveryJobsQuerySchema,
+  deliveryJobStatusSchema,
   razorpayOrderSchema
 };

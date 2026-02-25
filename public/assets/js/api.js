@@ -68,6 +68,8 @@ export const api = {
   listListings: (filters) => apiRequest(`/api/listings${buildQuery(filters)}`),
   listingById: (id) => apiRequest(`/api/listings/${id}`),
   createListing: (data) => apiRequest('/api/listings', { method: 'POST', body: data }),
+  updateListing: (id, data) => apiRequest(`/api/listings/${id}`, { method: 'PUT', body: data }),
+  deleteListing: (id) => apiRequest(`/api/listings/${id}`, { method: 'DELETE' }),
   uploadListingMedia: (listingId, file) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -77,11 +79,18 @@ export const api = {
   listCommunityPosts: (filters) => apiRequest(`/api/community/posts${buildQuery(filters)}`),
   communityPostById: (id) => apiRequest(`/api/community/posts/${id}`),
   createCommunityPost: (data) => apiRequest('/api/community/posts', { method: 'POST', body: data }),
+  updateCommunityPost: (postId, data) => apiRequest(`/api/community/posts/${postId}`, { method: 'PUT', body: data }),
+  deleteCommunityPost: (postId) => apiRequest(`/api/community/posts/${postId}`, { method: 'DELETE' }),
   createCommunityComment: (postId, data) =>
     apiRequest(`/api/community/posts/${postId}/comments`, { method: 'POST', body: data }),
+  updateCommunityComment: (commentId, data) => apiRequest(`/api/community/comments/${commentId}`, { method: 'PUT', body: data }),
   deleteCommunityComment: (commentId) => apiRequest(`/api/community/comments/${commentId}`, { method: 'DELETE' }),
   listDeliveryJobs: (filters) => apiRequest(`/api/delivery/jobs${buildQuery(filters)}`),
+  deliveryJobById: (jobId) => apiRequest(`/api/delivery/jobs/${jobId}`),
   claimDeliveryJob: (jobId) => apiRequest(`/api/delivery/jobs/${jobId}/claim`, { method: 'POST' }),
+  updateDeliveryJobStatus: (jobId, status) =>
+    apiRequest(`/api/delivery/jobs/${jobId}/status`, { method: 'PUT', body: { status } }),
+  deleteDeliveryJob: (jobId) => apiRequest(`/api/delivery/jobs/${jobId}`, { method: 'DELETE' }),
   createRazorpayOrder: (data) => apiRequest('/api/payments/razorpay/order', { method: 'POST', body: data }),
   askAI: (payload) => apiRequest('/api/ai/chat', { method: 'POST', body: payload }),
   adminSummary: () => apiRequest('/api/admin/summary'),
