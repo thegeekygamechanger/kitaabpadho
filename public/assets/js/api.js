@@ -58,6 +58,7 @@ export const api = {
   listNotifications: (filters) => apiRequest(`/api/notifications${buildQuery(filters)}`),
   readNotification: (id) => apiRequest(`/api/notifications/${id}/read`, { method: 'POST' }),
   readAllNotifications: () => apiRequest('/api/notifications/read-all', { method: 'POST' }),
+  listAreas: () => apiRequest('/api/areas'),
   locationNearby: (lat, lon) => apiRequest(`/api/location/nearby?lat=${lat}&lon=${lon}`),
   listListings: (filters) => apiRequest(`/api/listings${buildQuery(filters)}`),
   listingById: (id) => apiRequest(`/api/listings/${id}`),
@@ -74,7 +75,7 @@ export const api = {
   createCommunityComment: (postId, data) =>
     apiRequest(`/api/community/posts/${postId}/comments`, { method: 'POST', body: data }),
   deleteCommunityComment: (commentId) => apiRequest(`/api/community/comments/${commentId}`, { method: 'DELETE' }),
-  askAI: (prompt) => apiRequest('/api/ai/chat', { method: 'POST', body: { prompt } }),
+  askAI: (payload) => apiRequest('/api/ai/chat', { method: 'POST', body: payload }),
   adminSummary: () => apiRequest('/api/admin/summary'),
   listAdminActions: (filters) => apiRequest(`/api/admin/actions${buildQuery(filters)}`),
   listAdminUsers: (filters) => apiRequest(`/api/admin/users${buildQuery(filters)}`),

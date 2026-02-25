@@ -111,6 +111,9 @@ export function initNotifications({ state, openAuthModal }) {
       openAuthModal?.('Please login first.');
       return;
     }
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => null);
+    }
     window.location.hash = '#notificationsPanel';
     panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     await refresh();

@@ -171,6 +171,14 @@ body {
   color: #ebf2ff;
   text-decoration: none;
   font-weight: 600;
+  padding: 0.3rem 0.5rem;
+  border-radius: 10px;
+  transition: background 180ms ease, color 180ms ease;
+}
+
+.kb-nav a.active {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
 }
 
 .kb-badge {
@@ -180,6 +188,16 @@ body {
   border-radius: 999px;
   padding: 0.38rem 0.74rem;
   font-size: 0.86rem;
+}
+
+.kb-badge.is-user {
+  background: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.kb-nav .kb-btn.active {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.42);
 }
 
 .kb-main {
@@ -422,6 +440,10 @@ body {
 }
 
 .hidden {
+  display: none !important;
+}
+
+.view-hidden {
   display: none !important;
 }
 

@@ -76,6 +76,94 @@ function toPublicUser(user) {
   };
 }
 
+function titleCaseFromCode(value) {
+  return String(value || '')
+    .replaceAll('_', ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function truncateText(value, maxLen) {
+  return String(value || '').slice(0, maxLen);
+}
+
+function normalizeArray(values) {
+  if (!Array.isArray(values)) return [];
+  return values
+    .map((item) => String(item || '').trim().toLowerCase())
+    .filter((item) => item.length > 0);
+}
+
+function mergeUniqueStrings(base, incoming, max = 12) {
+  const merged = [];
+  for (const item of [...normalizeArray(base), ...normalizeArray(incoming)]) {
+    if (!merged.includes(item)) merged.push(item);
+    if (merged.length >= max) break;
+  }
+  return merged;
+}
+
+function inferPreferencePatch(existingPreferences, prompt) {
+  const lower = String(prompt || '').toLowerCase();
+  const current = existingPreferences || {};
+  const knownExams = ['jee', 'neet', 'gate', 'upsc', 'cat', 'ssc', 'bank', 'ca', 'csir'];
+  const knownCategories = ['book', 'notes', 'instrument', 'video', 'pdf', 'stationery', 'stationary'];
+  const knownStationery = ['notebook', 'pen', 'pencil', 'marker', 'calculator', 'geometry box', 'stapler', 'diary'];
+
+  const detectedExam = knownExams.find((exam) => lower.includes(exam));
+  const detectedCategories = knownCategories.filter((category) => lower.includes(category));
+  const detectedStationery = knownStationery.filter((item) => lower.includes(item));
+  const radiusMatch = lower.match(/\b(?:within|under|upto|up to|around|nearby)\s*(\d{2,3})\s*km\b/);
+
+  const next = {
+    examFocus: current.examFocus || '',
+    preferredCategories: normalizeArray(current.preferredCategories),
+    preferredStationery: normalizeArray(current.preferredStationery),
+    preferredRadiusKm: Number(current.preferredRadiusKm) || 200
+  };
+
+  let changed = false;
+  if (detectedExam && next.examFocus !== detectedExam.toUpperCase()) {
+    next.examFocus = detectedExam.toUpperCase();
+    changed = true;
+  }
+
+  const mergedCategories = mergeUniqueStrings(next.preferredCategories, detectedCategories, 8);
+  if (mergedCategories.join('|') !== next.preferredCategories.join('|')) {
+    next.preferredCategories = mergedCategories;
+    changed = true;
+  }
+
+  const mergedStationery = mergeUniqueStrings(next.preferredStationery, detectedStationery, 12);
+  if (mergedStationery.join('|') !== next.preferredStationery.join('|')) {
+    next.preferredStationery = mergedStationery;
+    changed = true;
+  }
+
+  if (radiusMatch) {
+    const parsed = Number(radiusMatch[1]);
+    if (Number.isFinite(parsed)) {
+      const bounded = Math.min(500, Math.max(25, parsed));
+      if (bounded !== next.preferredRadiusKm) {
+        next.preferredRadiusKm = bounded;
+        changed = true;
+      }
+    }
+  }
+
+  return { ...next, changed };
+}
+
+function formatListingsForPrompt(items = []) {
+  if (!Array.isArray(items) || items.length === 0) return 'No matching items found.';
+  return items
+    .slice(0, 10)
+    .map((item, index) => {
+      const distance = typeof item.distanceKm === 'number' ? `, ${Number(item.distanceKm).toFixed(1)} km` : '';
+      return `${index + 1}. ${item.title} | ${item.category}/${item.listingType} | INR ${item.price} | ${item.city}${distance}`;
+    })
+    .join('\n');
+}
+
 function createApp(deps = {}) {
   const appConfig = deps.config || config;
   const queryFn = deps.queryFn || query;
@@ -90,6 +178,7 @@ function createApp(deps = {}) {
   const cookieOptions = sessionCookieOptions(appConfig);
   const clearCookieOptions = { ...cookieOptions };
   delete clearCookieOptions.maxAge;
+  const sseClients = new Set();
 
   const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 40 });
   const listingWriteLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 80 });
@@ -158,7 +247,55 @@ function createApp(deps = {}) {
     }
   };
 
+  const publishRealtimeEvent = (eventName, payload = {}, targetUserId = null) => {
+    const data = JSON.stringify(payload);
+    const frame = `event: ${eventName}\ndata: ${data}\n\n`;
+    const staleClients = [];
+
+    for (const client of sseClients) {
+      if (targetUserId && Number(client.userId) !== Number(targetUserId)) continue;
+      try {
+        client.res.write(frame);
+      } catch {
+        staleClients.push(client);
+      }
+    }
+
+    for (const client of staleClients) {
+      sseClients.delete(client);
+    }
+  };
+
   app.get('/api/health', (_, res) => res.json({ ok: true, stack: 'express-neon-r2-pwa' }));
+
+  app.get('/api/events/stream', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+    const client = {
+      userId: req.user?.id || null,
+      res
+    };
+    sseClients.add(client);
+
+    res.write(`event: ready\ndata: ${JSON.stringify({ connected: true, userId: client.userId })}\n\n`);
+
+    const pingTimer = setInterval(() => {
+      try {
+        res.write(`event: ping\ndata: {"ts":${Date.now()}}\n\n`);
+      } catch {
+        clearInterval(pingTimer);
+      }
+    }, 25000);
+
+    req.on('close', () => {
+      clearInterval(pingTimer);
+      sseClients.delete(client);
+    });
+  });
 
   app.post('/api/auth/register', authLimiter, async (req, res) => {
     try {
@@ -509,12 +646,37 @@ function createApp(deps = {}) {
     }
   });
 
+  app.get('/api/areas', async (_, res) => {
+    try {
+      const areaRows = typeof repository.listAreaOptions === 'function' ? await repository.listAreaOptions() : [];
+      return res.json({
+        data: [
+          { value: 'all', label: 'All Areas', listingCount: 0 },
+          ...areaRows.map((item) => ({
+            value: item.areaCode,
+            label: item.areaName || titleCaseFromCode(item.areaCode),
+            listingCount: Number(item.listingCount || 0)
+          }))
+        ]
+      });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get('/api/location/nearby', async (req, res) => {
     const lat = Number(req.query.lat);
     const lon = Number(req.query.lon);
     if (Number.isNaN(lat) || Number.isNaN(lon)) {
       return res.status(400).json({ error: 'lat and lon are required numbers' });
     }
+
+    const [nearbyCities, areaRows] = await Promise.all([
+      typeof repository.listNearbyCities === 'function'
+        ? repository.listNearbyCities({ lat, lon, radiusKm: 250, limit: 12 }).catch(() => [])
+        : Promise.resolve([]),
+      typeof repository.listAreaOptions === 'function' ? repository.listAreaOptions().catch(() => []) : Promise.resolve([])
+    ]);
 
     try {
       const reverse = await reverseGeocodeFetch(
@@ -528,7 +690,13 @@ function createApp(deps = {}) {
           longitude: lon,
           address: geo.display_name || 'Detected location'
         },
-        hint: 'Listings are dynamically sorted by distance from your location.'
+        nearbyCities,
+        areaOptions: areaRows.map((item) => ({
+          value: item.areaCode,
+          label: item.areaName || titleCaseFromCode(item.areaCode),
+          listingCount: Number(item.listingCount || 0)
+        })),
+        hint: 'Listings are dynamically sorted by distance from your location (200 km radius).'
       });
     } catch {
       return res.json({
@@ -537,14 +705,24 @@ function createApp(deps = {}) {
           longitude: lon,
           address: 'Location detected (offline geocoder)'
         },
-        hint: 'Geocoder unavailable, but geo-filtering still works.'
+        nearbyCities,
+        areaOptions: areaRows.map((item) => ({
+          value: item.areaCode,
+          label: item.areaName || titleCaseFromCode(item.areaCode),
+          listingCount: Number(item.listingCount || 0)
+        })),
+        hint: 'Geocoder unavailable, but geo-filtering still works (200 km radius).'
       });
     }
   });
 
   app.get('/api/listings', async (req, res) => {
     try {
-      const filters = listingQuerySchema.parse(req.query);
+      const parsed = listingQuerySchema.parse(req.query);
+      const filters =
+        typeof parsed.lat === 'number' && typeof parsed.lon === 'number' && typeof parsed.radiusKm !== 'number'
+          ? { ...parsed, radiusKm: 200 }
+          : parsed;
       const data = await repository.listListings(filters);
       const total = await repository.countListings(filters);
       return res.json({
@@ -605,6 +783,16 @@ function createApp(deps = {}) {
           category: listing.category
         });
       }
+
+      publishRealtimeEvent('listing.created', {
+        id: listing.id,
+        title: listing.title,
+        city: listing.city,
+        listingType: listing.listingType,
+        category: listing.category
+      });
+      publishRealtimeEvent('notifications.invalidate', { source: 'listing.create' });
+
       return res.status(201).json(listing);
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
@@ -738,6 +926,7 @@ function createApp(deps = {}) {
       });
 
       const fullPost = await repository.getCommunityPostById(post.id);
+      publishRealtimeEvent('community.updated', { type: 'post_created', postId: post.id });
       return res.status(201).json(fullPost || post);
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
@@ -775,7 +964,13 @@ function createApp(deps = {}) {
           entityType: 'community_post',
           entityId: postId
         });
+        publishRealtimeEvent(
+          'notifications.invalidate',
+          { source: 'community.comment', postId, actorName: req.user.fullName || '' },
+          post.createdBy
+        );
       }
+      publishRealtimeEvent('community.updated', { type: 'comment_created', postId, commentId: comment.id });
       return res.status(201).json({ ...comment, authorName: req.user.fullName });
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
@@ -796,6 +991,7 @@ function createApp(deps = {}) {
         entityId: commentId,
         summary: 'Community comment deleted'
       });
+      publishRealtimeEvent('community.updated', { type: 'comment_deleted', commentId });
       return res.json({ ok: true });
     } catch (error) {
       return res.status(500).json({ error: error.message });
@@ -804,15 +1000,174 @@ function createApp(deps = {}) {
 
   app.post('/api/ai/chat', async (req, res) => {
     try {
-      const { prompt } = aiSchema.parse(req.body);
-      const ai = await askAiFn(prompt);
+      const body = aiSchema.parse(req.body);
+      const prompt = sanitizeText(body.prompt, 2000);
+      const hasCoords = typeof body.lat === 'number' && typeof body.lon === 'number';
+      const lat = hasCoords ? body.lat : null;
+      const lon = hasCoords ? body.lon : null;
+      const cityHint = body.city ? sanitizeText(body.city, 100) : '';
+
+      let preferences = {
+        examFocus: '',
+        preferredCategories: [],
+        preferredStationery: [],
+        preferredRadiusKm: 200
+      };
+      if (req.user?.id && typeof repository.getUserPreferences === 'function') {
+        preferences = await repository.getUserPreferences(req.user.id);
+      }
+
+      const inferred = inferPreferencePatch(preferences, prompt);
+      if (req.user?.id && inferred.changed && typeof repository.upsertUserPreferences === 'function') {
+        preferences = await repository.upsertUserPreferences({
+          userId: req.user.id,
+          examFocus: inferred.examFocus || '',
+          preferredCategories: inferred.preferredCategories || [],
+          preferredStationery: inferred.preferredStationery || [],
+          preferredRadiusKm: inferred.preferredRadiusKm || 200
+        });
+      } else {
+        preferences = {
+          ...preferences,
+          examFocus: inferred.examFocus || preferences.examFocus || '',
+          preferredCategories: inferred.preferredCategories || preferences.preferredCategories || [],
+          preferredStationery: inferred.preferredStationery || preferences.preferredStationery || [],
+          preferredRadiusKm: inferred.preferredRadiusKm || preferences.preferredRadiusKm || 200
+        };
+      }
+
+      const radiusKm = Math.min(500, Math.max(25, Number(body.radiusKm || preferences.preferredRadiusKm || 200)));
+      const preferredCategories = normalizeArray(preferences.preferredCategories);
+
+      let memoryRows = [];
+      if (req.user?.id && typeof repository.listRecentAiChatMemory === 'function') {
+        memoryRows = await repository.listRecentAiChatMemory({ userId: req.user.id, limit: 10 });
+      }
+
+      if (req.user?.id && typeof repository.addAiChatMemory === 'function') {
+        await repository.addAiChatMemory({ userId: req.user.id, role: 'user', message: truncateText(prompt, 3500) });
+      }
+
+      let ragListings = [];
+      if (typeof repository.searchListingsForAi === 'function') {
+        ragListings = await repository.searchListingsForAi({
+          q: truncateText(prompt, 160),
+          lat,
+          lon,
+          city: cityHint,
+          categories: preferredCategories,
+          radiusKm,
+          limit: 8
+        });
+      } else if (typeof repository.listListings === 'function') {
+        ragListings = await repository.listListings({
+          q: truncateText(prompt, 120),
+          city: cityHint || undefined,
+          lat,
+          lon,
+          radiusKm,
+          sort: hasCoords ? 'distance' : 'newest',
+          limit: 8,
+          offset: 0
+        });
+      }
+
+      const nearbyStationery =
+        typeof repository.listNearbyStationery === 'function'
+          ? await repository.listNearbyStationery({
+              lat,
+              lon,
+              city: cityHint,
+              radiusKm,
+              limit: 8
+            })
+          : [];
+
+      const nearbyCities =
+        hasCoords && typeof repository.listNearbyCities === 'function'
+          ? await repository.listNearbyCities({ lat, lon, radiusKm: 250, limit: 8 })
+          : [];
+
+      const locationText = hasCoords
+        ? `Latitude: ${lat}, Longitude: ${lon}`
+        : cityHint
+          ? `City hint: ${cityHint}`
+          : 'No location shared';
+      const nearbyCitiesText = nearbyCities.length
+        ? nearbyCities
+            .map(
+              (item, index) =>
+                `${index + 1}. ${item.city} (${Number(item.distanceKm || 0).toFixed(1)} km, ${Number(item.listingCount || 0)} listings)`
+            )
+            .join('\n')
+        : 'No nearby cities found.';
+
+      const systemPrompt = [
+        'You are PadhAI for KitaabPadhoIndia.',
+        'Rules: respond in natural, direct conversation.',
+        'No meta lines, no self-references, no mention of hidden context.',
+        'Use the provided memory and marketplace data to answer follow-up queries correctly.',
+        'For product/stationery suggestions, prefer items from provided listings and respect user preferences and radius.'
+      ].join('\n');
+
+      const messages = [
+        ...memoryRows.map((row) => ({
+          role: row.role === 'assistant' ? 'assistant' : 'user',
+          content: truncateText(row.message, 1200)
+        })),
+        {
+          role: 'user',
+          content: [
+            `User: ${req.user?.fullName || 'Guest'}`,
+            `Exam Focus: ${preferences.examFocus || 'not set'}`,
+            `Preferred Categories: ${(preferences.preferredCategories || []).join(', ') || 'not set'}`,
+            `Preferred Stationery: ${(preferences.preferredStationery || []).join(', ') || 'not set'}`,
+            `Preferred Radius: ${radiusKm} km`,
+            `Location: ${locationText}`,
+            'Nearby Cities (<=250 km):',
+            nearbyCitiesText,
+            'Marketplace Matches:',
+            formatListingsForPrompt(ragListings),
+            'Stationery Matches:',
+            formatListingsForPrompt(nearbyStationery),
+            'Current User Message:',
+            prompt
+          ].join('\n')
+        }
+      ];
+
+      const aiInput = askAiFn === askPadhAI ? { prompt, systemPrompt, messages } : prompt;
+      const ai = await askAiFn(aiInput);
+
+      if (req.user?.id && typeof repository.addAiChatMemory === 'function' && ai?.text) {
+        await repository.addAiChatMemory({
+          userId: req.user.id,
+          role: 'assistant',
+          message: truncateText(ai.text, 3500)
+        });
+      }
+
       await logProjectAction(req, {
         actionType: 'ai.chat',
         entityType: 'assistant',
         summary: 'AI chat request processed',
-        details: { provider: ai.provider, promptLength: String(prompt).length }
+        details: {
+          provider: ai.provider,
+          promptLength: String(prompt).length,
+          memoryItems: memoryRows.length,
+          ragListings: ragListings.length,
+          stationeryMatches: nearbyStationery.length,
+          hasCoords
+        }
       });
-      return res.json(ai);
+      return res.json({
+        ...ai,
+        context: {
+          memoryItems: memoryRows.length,
+          nearbyCities: nearbyCities.slice(0, 5),
+          radiusKm
+        }
+      });
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
       return res.status(500).json({ error: error.message });

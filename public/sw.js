@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kitaabpadhoindia-shell-v5';
+const CACHE_NAME = 'kitaabpadhoindia-shell-v6';
 const SHELL_ASSETS = [
   '/',
   '/index.html',
@@ -16,6 +16,7 @@ const SHELL_ASSETS = [
   '/assets/js/marketplace.js',
   '/assets/js/community.js',
   '/assets/js/ai.js',
+  '/assets/js/realtime.js',
   '/assets/js/pwa.js'
 ];
 

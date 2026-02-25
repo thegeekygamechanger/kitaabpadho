@@ -7,6 +7,7 @@ import { initMarketplace } from './marketplace.js';
 import { initNotifications } from './notifications.js';
 import { initProfile } from './profile.js';
 import { initPwa } from './pwa.js';
+import { initRealtime } from './realtime.js';
 import { state } from './state.js';
 import { el, hideModal } from './ui.js';
 
@@ -21,6 +22,36 @@ function wireModalDismiss() {
 
 function boot() {
   let auth;
+  const viewIds = ['marketplace', 'community', 'ai', 'notificationsPanel', 'profilePanel', 'adminPanel'];
+
+  function syncTabView() {
+    const rawTarget = String(window.location.hash || '#marketplace').replace('#', '');
+    const requested = viewIds.includes(rawTarget) ? rawTarget : 'marketplace';
+    const target =
+      (requested === 'profilePanel' || requested === 'notificationsPanel') && !state.user
+        ? 'marketplace'
+        : requested;
+
+    const hero = el('heroSection');
+    if (hero) hero.classList.toggle('view-hidden', target !== 'marketplace');
+
+    for (const id of viewIds) {
+      const section = el(id);
+      if (!section) continue;
+      section.classList.toggle('view-hidden', id !== target);
+    }
+
+    document.querySelectorAll('.kb-nav a[href^="#"]').forEach((link) => {
+      link.classList.toggle('active', link.getAttribute('href') === `#${target}`);
+    });
+
+    const notificationsBtn = el('notificationsBtn');
+    if (notificationsBtn) notificationsBtn.classList.toggle('active', target === 'notificationsPanel');
+
+    if (requested !== target) {
+      window.history.replaceState(null, '', `#${target}`);
+    }
+  }
 
   const marketplace = initMarketplace({
     state,
@@ -51,6 +82,13 @@ function boot() {
     openAuthModal: (message) => auth?.openAuthModal(message)
   });
 
+  const realtime = initRealtime({
+    state,
+    marketplace,
+    community,
+    notifications
+  });
+
   auth = initAuth({
     state,
     onAuthChanged: async () => {
@@ -59,8 +97,10 @@ function boot() {
         community.refreshPosts(),
         admin.onAuthChanged(),
         profile.onAuthChanged(),
-        notifications.onAuthChanged()
+        notifications.onAuthChanged(),
+        realtime.onAuthChanged()
       ]);
+      syncTabView();
     }
   });
 
@@ -70,15 +110,18 @@ function boot() {
       marketplace.onLocationChanged(coords);
       await marketplace.refreshListings();
     },
-    onAreaChanged: async (areaCode) => {
+    onAreaChanged: async ({ areaCode, city }) => {
       marketplace.setAreaCode(areaCode);
+      marketplace.setCityFromArea(city);
       await marketplace.refreshListings();
     }
   });
 
-  initAi();
+  initAi({ state });
   initPwa();
   wireModalDismiss();
+  syncTabView();
+  window.addEventListener('hashchange', syncTabView);
 
   el('globalSearchForm')?.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -96,8 +139,10 @@ function boot() {
         community.refreshPosts(),
         admin.refresh(),
         profile.refreshUser(),
-        notifications.refresh()
+        notifications.refresh(),
+        realtime.onAuthChanged()
       ]);
+      syncTabView();
     });
 }
 

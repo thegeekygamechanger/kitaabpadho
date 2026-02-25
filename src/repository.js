@@ -180,6 +180,224 @@ function createRepository(queryFn) {
       return result.rows[0] || null;
     },
 
+    async getUserPreferences(userId) {
+      const result = await run(
+        `SELECT
+          user_id AS "userId",
+          exam_focus AS "examFocus",
+          preferred_categories AS "preferredCategories",
+          preferred_stationery AS "preferredStationery",
+          preferred_radius_km AS "preferredRadiusKm",
+          updated_at AS "updatedAt"
+         FROM user_preferences
+         WHERE user_id = $1
+         LIMIT 1`,
+        [userId]
+      );
+      return (
+        result.rows[0] || {
+          userId,
+          examFocus: '',
+          preferredCategories: [],
+          preferredStationery: [],
+          preferredRadiusKm: 200
+        }
+      );
+    },
+
+    async upsertUserPreferences({ userId, examFocus = '', preferredCategories = [], preferredStationery = [], preferredRadiusKm = 200 }) {
+      const result = await run(
+        `INSERT INTO user_preferences
+          (user_id, exam_focus, preferred_categories, preferred_stationery, preferred_radius_km, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         ON CONFLICT (user_id) DO UPDATE SET
+          exam_focus = EXCLUDED.exam_focus,
+          preferred_categories = EXCLUDED.preferred_categories,
+          preferred_stationery = EXCLUDED.preferred_stationery,
+          preferred_radius_km = EXCLUDED.preferred_radius_km,
+          updated_at = NOW()
+         RETURNING
+          user_id AS "userId",
+          exam_focus AS "examFocus",
+          preferred_categories AS "preferredCategories",
+          preferred_stationery AS "preferredStationery",
+          preferred_radius_km AS "preferredRadiusKm",
+          updated_at AS "updatedAt"`,
+        [userId, examFocus || null, preferredCategories, preferredStationery, preferredRadiusKm]
+      );
+      return result.rows[0] || null;
+    },
+
+    async addAiChatMemory({ userId, role, message }) {
+      const result = await run(
+        `INSERT INTO ai_chat_memory (user_id, role, message)
+         VALUES ($1, $2, $3)
+         RETURNING id, user_id AS "userId", role, message, created_at AS "createdAt"`,
+        [userId, role, message]
+      );
+      return result.rows[0] || null;
+    },
+
+    async listRecentAiChatMemory({ userId, limit = 12 }) {
+      const result = await run(
+        `SELECT role, message, created_at AS "createdAt"
+         FROM ai_chat_memory
+         WHERE user_id = $1
+         ORDER BY created_at DESC
+         LIMIT $2`,
+        [userId, limit]
+      );
+      return result.rows.reverse();
+    },
+
+    async listNearbyCities({ lat, lon, radiusKm = 250, limit = 12 }) {
+      const result = await run(
+        `SELECT
+          l.city,
+          MIN(
+            6371 * acos(least(1, greatest(-1,
+              cos(radians($1)) * cos(radians(l.latitude)) *
+              cos(radians(l.longitude) - radians($2)) +
+              sin(radians($1)) * sin(radians(l.latitude))
+            )))
+          ) AS "distanceKm",
+          COUNT(*)::int AS "listingCount"
+         FROM listings l
+         WHERE l.latitude IS NOT NULL AND l.longitude IS NOT NULL
+         GROUP BY l.city
+         HAVING MIN(
+           6371 * acos(least(1, greatest(-1,
+             cos(radians($1)) * cos(radians(l.latitude)) *
+             cos(radians(l.longitude) - radians($2)) +
+             sin(radians($1)) * sin(radians(l.latitude))
+           )))
+         ) <= $3
+         ORDER BY "distanceKm" ASC
+         LIMIT $4`,
+        [lat, lon, radiusKm, limit]
+      );
+      return result.rows;
+    },
+
+    async listAreaOptions() {
+      const result = await run(
+        `SELECT
+          area_code AS "areaCode",
+          INITCAP(REPLACE(area_code, '_', ' ')) AS "areaName",
+          COUNT(*)::int AS "listingCount"
+         FROM listings
+         GROUP BY area_code
+         ORDER BY "listingCount" DESC`
+      );
+      return result.rows;
+    },
+
+    async listNearbyStationery({ lat = null, lon = null, city = '', radiusKm = 250, limit = 8 }) {
+      const values = [];
+      const where = [`(l.category = 'stationery' OR l.category = 'stationary')`];
+      let distanceSql = 'NULL::double precision';
+      const hasCoords = typeof lat === 'number' && typeof lon === 'number';
+
+      if (hasCoords) {
+        values.push(lat, lon);
+        const latParam = values.length - 1;
+        const lonParam = values.length;
+        distanceSql = `(6371 * acos(least(1, greatest(-1,
+          cos(radians($${latParam})) * cos(radians(l.latitude)) *
+          cos(radians(l.longitude) - radians($${lonParam})) +
+          sin(radians($${latParam})) * sin(radians(l.latitude))
+        ))))`;
+        values.push(radiusKm);
+        where.push(`${distanceSql} <= $${values.length}`);
+      } else if (city) {
+        values.push(`%${city}%`);
+        where.push(`l.city ILIKE $${values.length}`);
+      }
+
+      values.push(limit);
+      const limitParam = values.length;
+      const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      const orderSql = hasCoords ? `${distanceSql} ASC, l.created_at DESC` : 'l.created_at DESC';
+
+      const result = await run(
+        `SELECT
+          l.id,
+          l.title,
+          l.price,
+          l.city,
+          l.listing_type AS "listingType",
+          l.category,
+          ${distanceSql} AS "distanceKm"
+         FROM listings l
+         ${whereSql}
+         ORDER BY ${orderSql}
+         LIMIT $${limitParam}`,
+        values
+      );
+      return result.rows;
+    },
+
+    async searchListingsForAi({ q = '', lat = null, lon = null, city = '', categories = [], radiusKm = 200, limit = 10 }) {
+      const values = [];
+      const where = [];
+      let distanceSql = 'NULL::double precision';
+      const hasCoords = typeof lat === 'number' && typeof lon === 'number';
+
+      if (hasCoords) {
+        values.push(lat, lon);
+        const latParam = values.length - 1;
+        const lonParam = values.length;
+        distanceSql = `(6371 * acos(least(1, greatest(-1,
+          cos(radians($${latParam})) * cos(radians(l.latitude)) *
+          cos(radians(l.longitude) - radians($${lonParam})) +
+          sin(radians($${latParam})) * sin(radians(l.latitude))
+        ))))`;
+        values.push(radiusKm);
+        where.push(`l.latitude IS NOT NULL AND l.longitude IS NOT NULL AND ${distanceSql} <= $${values.length}`);
+      }
+
+      if (q) {
+        values.push(`%${q}%`);
+        const p = values.length;
+        where.push(`(l.title ILIKE $${p} OR l.description ILIKE $${p} OR l.city ILIKE $${p} OR l.category ILIKE $${p})`);
+      }
+
+      if (city) {
+        values.push(`%${city}%`);
+        where.push(`l.city ILIKE $${values.length}`);
+      }
+
+      if (Array.isArray(categories) && categories.length) {
+        values.push(categories);
+        where.push(`l.category = ANY($${values.length}::text[])`);
+      }
+
+      values.push(limit);
+      const limitParam = values.length;
+      const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      const orderSql = hasCoords ? `${distanceSql} ASC NULLS LAST, l.created_at DESC` : 'l.created_at DESC';
+
+      const result = await run(
+        `SELECT
+          l.id,
+          l.title,
+          l.description,
+          l.category,
+          l.listing_type AS "listingType",
+          l.price,
+          l.city,
+          l.area_code AS "areaCode",
+          l.created_at AS "createdAt",
+          ${distanceSql} AS "distanceKm"
+         FROM listings l
+         ${whereSql}
+         ORDER BY ${orderSql}
+         LIMIT $${limitParam}`,
+        values
+      );
+      return result.rows;
+    },
+
     async createProjectAction({
       actorId = null,
       actorEmail = '',
@@ -344,6 +562,11 @@ function createRepository(queryFn) {
           cos(radians(l.longitude) - radians($${lonParam})) +
           sin(radians($${latParam})) * sin(radians(l.latitude))
         ))))`;
+
+        if (typeof filters.radiusKm === 'number') {
+          values.push(filters.radiusKm);
+          where.push(`l.latitude IS NOT NULL AND l.longitude IS NOT NULL AND ${distanceSql} <= $${values.length}`);
+        }
       }
 
       if (filters.q) {
@@ -424,6 +647,23 @@ function createRepository(queryFn) {
     async countListings(filters) {
       const values = [];
       const where = [];
+      let distanceSql = 'NULL::double precision';
+      const hasCoords = typeof filters.lat === 'number' && typeof filters.lon === 'number';
+
+      if (hasCoords) {
+        values.push(filters.lat, filters.lon);
+        const latParam = values.length - 1;
+        const lonParam = values.length;
+        distanceSql = `(6371 * acos(least(1, greatest(-1,
+          cos(radians($${latParam})) * cos(radians(latitude)) *
+          cos(radians(longitude) - radians($${lonParam})) +
+          sin(radians($${latParam})) * sin(radians(latitude))
+        ))))`;
+        if (typeof filters.radiusKm === 'number') {
+          values.push(filters.radiusKm);
+          where.push(`latitude IS NOT NULL AND longitude IS NOT NULL AND ${distanceSql} <= $${values.length}`);
+        }
+      }
 
       if (filters.q) {
         values.push(`%${filters.q}%`);
@@ -478,7 +718,7 @@ function createRepository(queryFn) {
          FROM users u
          WHERE u.id <> $1
          RETURNING id`,
-        [actorId, listingId, `New arrival: ${title}`, `${title} • ${city} • ${listingType}/${category}`]
+        [actorId, listingId, `New arrival: ${title}`, `${title} | ${city} | ${listingType}/${category}`]
       );
       return result.rowCount || 0;
     },

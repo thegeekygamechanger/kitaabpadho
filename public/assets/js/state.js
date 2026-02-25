@@ -2,8 +2,13 @@ export const state = {
   user: null,
   location: {
     areaCode: 'all',
+    areaSelectValue: 'all',
+    selectedCity: '',
     coords: null,
-    address: ''
+    address: '',
+    areaOptions: [],
+    nearbyCities: [],
+    radiusKm: 200
   },
   marketplace: {
     listingType: 'buy',

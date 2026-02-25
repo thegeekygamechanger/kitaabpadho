@@ -18,8 +18,58 @@ function providerOrder() {
   return useGeminiFirst ? ['gemini', 'groq'] : ['groq', 'gemini'];
 }
 
-async function requestGemini(prompt) {
+const DEFAULT_SYSTEM_PROMPT = [
+  'You are PadhAI, a practical study and marketplace copilot for Indian students.',
+  'Use natural conversation and short follow-up memory.',
+  'Give direct, accurate, complete answers.',
+  'Do not add meta lines, disclaimers, or self-references like "as an AI".',
+  'If recommendations are requested, prioritize the provided listing/context data.',
+  'When useful, provide actionable steps in compact bullets.'
+].join('\n');
+
+function normalizeMessages(input) {
+  if (typeof input === 'string') {
+    return {
+      systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: input.trim() }]
+    };
+  }
+
+  const systemPrompt =
+    typeof input?.systemPrompt === 'string' && input.systemPrompt.trim()
+      ? input.systemPrompt.trim()
+      : DEFAULT_SYSTEM_PROMPT;
+
+  const messages = Array.isArray(input?.messages)
+    ? input.messages
+        .map((item) => ({
+          role: item?.role === 'assistant' ? 'assistant' : 'user',
+          content: String(item?.content || '').trim()
+        }))
+        .filter((item) => item.content.length > 0)
+    : [];
+
+  if (typeof input?.prompt === 'string' && input.prompt.trim()) {
+    messages.push({ role: 'user', content: input.prompt.trim() });
+  }
+
+  return {
+    systemPrompt,
+    messages: messages.length ? messages : [{ role: 'user', content: '' }]
+  };
+}
+
+function buildGeminiPrompt({ systemPrompt, messages }) {
+  const transcript = messages
+    .map((message) => `${message.role === 'assistant' ? 'Assistant' : 'User'}: ${message.content}`)
+    .join('\n');
+  return `${systemPrompt}\n\nConversation:\n${transcript}\nAssistant:`;
+}
+
+async function requestGemini(input) {
   if (!config.ai.geminiApiKey) throw new Error('Gemini API key missing');
+  const normalized = normalizeMessages(input);
+  const prompt = buildGeminiPrompt(normalized);
   const res = await withTimeout(
     (signal) =>
       fetch(
@@ -38,8 +88,16 @@ async function requestGemini(prompt) {
   return json?.candidates?.[0]?.content?.parts?.[0]?.text || 'No response from Gemini.';
 }
 
-async function requestGroq(prompt) {
+async function requestGroq(input) {
   if (!config.ai.groqApiKey) throw new Error('Groq API key missing');
+  const normalized = normalizeMessages(input);
+  const messages = [
+    { role: 'system', content: normalized.systemPrompt },
+    ...normalized.messages.map((item) => ({
+      role: item.role === 'assistant' ? 'assistant' : 'user',
+      content: item.content
+    }))
+  ];
   const base = String(config.ai.groqBaseUrl || 'https://api.groq.com/openai/v1').replace(/\/$/, '');
   const res = await withTimeout(
     (signal) =>
@@ -51,10 +109,7 @@ async function requestGroq(prompt) {
         },
         body: JSON.stringify({
           model: config.ai.modelGroq,
-          messages: [
-            { role: 'system', content: 'You are PadhAI, a practical learning assistant for students in India.' },
-            { role: 'user', content: prompt }
-          ]
+          messages
         }),
         signal
       }),
@@ -65,13 +120,14 @@ async function requestGroq(prompt) {
   return json?.choices?.[0]?.message?.content || 'No response from Groq.';
 }
 
-async function askPadhAI(prompt) {
+async function askPadhAI(input) {
+  const normalized = normalizeMessages(input);
   const order = providerOrder();
   const errors = [];
 
   for (const provider of order) {
     try {
-      const text = provider === 'gemini' ? await requestGemini(prompt) : await requestGroq(prompt);
+      const text = provider === 'gemini' ? await requestGemini(normalized) : await requestGroq(normalized);
       return { provider, text };
     } catch (err) {
       errors.push(`${provider}: ${err.message}`);

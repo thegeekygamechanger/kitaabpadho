@@ -27,9 +27,9 @@ export function initProfile({ state, openAuthModal, onUserUpdated }) {
     if (profileForm?.fullName) profileForm.fullName.value = state.user.fullName || '';
     setText(
       'profileSummary',
-      `${escapeHtml(state.user.fullName || '')} • ${escapeHtml(state.user.email || '')} • role: ${escapeHtml(
+      `${escapeHtml(state.user.fullName || '')} | ${escapeHtml(state.user.email || '')} | role: ${escapeHtml(
         state.user.role || 'student'
-      )} • TOTP: ${state.user.totpEnabled ? 'enabled' : 'disabled'}`
+      )} | TOTP: ${state.user.totpEnabled ? 'enabled' : 'disabled'}`
     );
   }
 

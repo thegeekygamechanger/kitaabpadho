@@ -1,4 +1,4 @@
-export function el(id) {
+﻿export function el(id) {
   return document.getElementById(id);
 }
 
@@ -18,7 +18,7 @@ export function escapeHtml(text = '') {
 
 export function formatInr(value) {
   const amount = Number(value || 0);
-  return `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+  return `INR ${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 }
 
 export function showModal(id) {

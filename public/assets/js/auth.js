@@ -15,13 +15,19 @@ export function initAuth({ state, onAuthChanged }) {
     if (state.user) {
       if (openAuthBtn) openAuthBtn.hidden = true;
       if (logoutBtn) logoutBtn.hidden = false;
-      const roleTag = state.user.role === 'admin' ? ' [admin]' : '';
-      const totpTag = state.user.totpEnabled ? ' [2FA]' : '';
-      if (authBadge) authBadge.textContent = `Hi ${state.user.fullName}${roleTag}${totpTag}`;
+      if (authBadge) {
+        authBadge.textContent = `Hi ${state.user.fullName}`;
+        authBadge.classList.add('is-user');
+        authBadge.title = `${state.user.email} | role: ${state.user.role}${state.user.totpEnabled ? ' | 2FA enabled' : ''}`;
+      }
     } else {
       if (openAuthBtn) openAuthBtn.hidden = false;
       if (logoutBtn) logoutBtn.hidden = true;
-      if (authBadge) authBadge.textContent = 'Guest Mode';
+      if (authBadge) {
+        authBadge.textContent = 'Guest Mode';
+        authBadge.classList.remove('is-user');
+        authBadge.title = '';
+      }
     }
   }
 

@@ -43,6 +43,7 @@ export function initMarketplace({ state, openAuthModal }) {
     if (state.location.coords) {
       filters.lat = state.location.coords.lat;
       filters.lon = state.location.coords.lon;
+      filters.radiusKm = state.location.radiusKm || 200;
     }
     return filters;
   }
@@ -87,7 +88,7 @@ export function initMarketplace({ state, openAuthModal }) {
               ${distanceLabel}
             </div>
             <h3 class="card-title">${escapeHtml(item.title)}</h3>
-            <p class="muted">${escapeHtml(item.city)} · ${escapeHtml(item.ownerName || 'Student')}</p>
+            <p class="muted">${escapeHtml(item.city)} | ${escapeHtml(item.ownerName || 'Student')}</p>
             <div class="card-price">${formatInr(item.price)}</div>
             <p class="muted">${escapeHtml(String(item.description || '').slice(0, 90))}</p>
             <div class="card-actions">
@@ -131,10 +132,10 @@ export function initMarketplace({ state, openAuthModal }) {
 
       listingDetailContent.innerHTML = `
         <h3>${escapeHtml(listing.title)}</h3>
-        <p class="muted">${escapeHtml(listing.city)} · ${escapeHtml(
+        <p class="muted">${escapeHtml(listing.city)} | ${escapeHtml(
         (listing.areaCode || 'other').replaceAll('_', ' ')
       )}</p>
-        <p><strong>${formatInr(listing.price)}</strong> · ${escapeHtml(listing.listingType)}</p>
+        <p><strong>${formatInr(listing.price)}</strong> | ${escapeHtml(listing.listingType)}</p>
         <p>${escapeHtml(listing.description)}</p>
         <p class="muted">Owner: ${escapeHtml(listing.ownerName || 'Student')} ${
         listing.ownerEmail ? `(${escapeHtml(listing.ownerEmail)})` : ''
@@ -221,13 +222,17 @@ export function initMarketplace({ state, openAuthModal }) {
   syncControlsFromState();
   syncListingTypeTabs();
 
-  return {
+    return {
     refreshListings,
     setSearchQuery(query) {
       state.marketplace.q = query;
     },
     setAreaCode(areaCode) {
       state.location.areaCode = areaCode;
+    },
+    setCityFromArea(cityName) {
+      state.marketplace.city = cityName || '';
+      syncControlsFromState();
     },
     onLocationChanged(coords) {
       state.location.coords = coords;

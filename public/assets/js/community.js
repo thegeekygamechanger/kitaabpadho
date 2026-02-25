@@ -105,7 +105,7 @@ export function initCommunity({ state, openAuthModal }) {
       const canComment = Boolean(state.user);
       detailNode.innerHTML = `
         <h3>${escapeHtml(post.title)}</h3>
-        <p class="muted">${escapeHtml(post.categoryName || '')} · ${escapeHtml(post.authorName || 'Member')}</p>
+        <p class="muted">${escapeHtml(post.categoryName || '')} | ${escapeHtml(post.authorName || 'Member')}</p>
         <p>${escapeHtml(post.content)}</p>
         <hr />
         <h4>Comments</h4>

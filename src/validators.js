@@ -35,6 +35,7 @@ const listingQuerySchema = z.object({
   areaCode: z.union([areaCodeEnum, z.literal('all')]).optional(),
   lat: optionalNumber(z.number().min(-90).max(90)),
   lon: optionalNumber(z.number().min(-180).max(180)),
+  radiusKm: optionalNumber(z.number().min(1).max(500)),
   sort: z.enum(['newest', 'price_asc', 'price_desc', 'distance']).optional().default('newest'),
   limit: optionalNumber(z.number().int().min(1).max(100)).default(24),
   offset: optionalNumber(z.number().int().min(0).max(10000)).default(0)
@@ -136,7 +137,12 @@ const adminActionQuerySchema = z.object({
 });
 
 const aiSchema = z.object({
-  prompt: z.string().min(5).max(2000)
+  prompt: z.string().trim().min(1).max(2000),
+  lat: optionalNumber(z.number().min(-90).max(90)),
+  lon: optionalNumber(z.number().min(-180).max(180)),
+  city: z.string().trim().min(1).max(100).optional(),
+  areaCode: z.string().trim().min(1).max(120).optional(),
+  radiusKm: optionalNumber(z.number().min(1).max(500))
 });
 
 module.exports = {
