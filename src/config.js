@@ -6,6 +6,9 @@ module.exports = {
   nodeEnv: process.env.NODE_ENV || 'development',
   appBaseUrl: process.env.APP_BASE_URL || 'http://localhost:3000',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  sessionSecret: process.env.SESSION_SECRET || 'replace-me',
+  sessionCookieName: process.env.SESSION_COOKIE_NAME || 'kp_session',
+  sessionTtlSeconds: Number(process.env.SESSION_TTL_SECONDS || 7 * 24 * 60 * 60),
   databaseUrl: process.env.DATABASE_URL || '',
   r2: {
     accountId: process.env.R2_ACCOUNT_ID || '',
