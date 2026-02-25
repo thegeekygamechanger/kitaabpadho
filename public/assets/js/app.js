@@ -9,7 +9,7 @@ import { state } from './state.js';
 import { el, hideModal } from './ui.js';
 
 function wireModalDismiss() {
-  ['authModal', 'listingDetailModal', 'communityDetailModal'].forEach((modalId) => {
+  ['authModal', 'listingDetailModal', 'communityDetailModal', 'updateModal'].forEach((modalId) => {
     const modal = el(modalId);
     modal?.addEventListener('click', (event) => {
       if (event.target === modal) hideModal(modalId);

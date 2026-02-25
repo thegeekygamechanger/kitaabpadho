@@ -481,6 +481,16 @@ body {
   width: min(920px, 96vw);
 }
 
+.modal-card.update-card {
+  width: min(420px, 96vw);
+}
+
+.update-later-btn {
+  color: #17356f;
+  border-color: #c5d7ff;
+  background: #eef4ff;
+}
+
 .modal-close {
   position: absolute;
   top: 0.55rem;

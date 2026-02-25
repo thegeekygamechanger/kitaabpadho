@@ -21,15 +21,16 @@ This branch revamps the project to a modern **Express** stack while preserving a
    cp .env.example .env
    ```
 2. Set `DATABASE_URL` to your Neon Postgres connection string.
-3. Run schema SQL from `db/schema.sql`.
-4. If upgrading an existing DB, also run:
-   - `db/migrations/001_revamp_kitaabpadhoindia.sql`
-5. Install and run:
+3. Install and run:
    ```bash
    npm install
    npm start
    ```
-6. Open `http://localhost:3000`.
+4. On startup, the app auto-applies:
+   - `db/schema.sql`
+   - all `.sql` files under `db/migrations/`
+   (tracked using `schema_migrations` table)
+5. Open `http://localhost:3000`.
 
 ## Run tests
 ```bash
@@ -72,3 +73,4 @@ npm test
 - If AI keys are missing, PadhAI returns graceful fallback message.
 - If R2 credentials are missing, upload endpoint returns metadata without persistent object storage.
 - Legacy PHP folders are intentionally left in repo for reference; new runtime is in `src/` + `public/`.
+- PWA now shows an update dialog when a new service worker is waiting; clicking `Update Now` applies it and reloads.

@@ -7,6 +7,7 @@ const path = require('path');
 const multer = require('multer');
 const config = require('./config');
 const { query } = require('./db');
+const { runDbBootstrap } = require('./bootstrap');
 const { uploadMedia, r2Enabled } = require('./storage');
 const { askPadhAI } = require('./ai');
 const { createRepository } = require('./repository');
@@ -581,9 +582,18 @@ function createApp(deps = {}) {
 
 if (require.main === module) {
   const app = createApp();
-  app.listen(config.port, () => {
-    console.log(`KitaabPadho revamp running on ${config.appBaseUrl}`);
-  });
+
+  (async () => {
+    try {
+      await runDbBootstrap({ logger: console });
+      app.listen(config.port, () => {
+        console.log(`KitaabPadho revamp running on ${config.appBaseUrl}`);
+      });
+    } catch (error) {
+      console.error(`Startup failed: ${error.message}`);
+      process.exit(1);
+    }
+  })();
 }
 
 module.exports = { createApp };
