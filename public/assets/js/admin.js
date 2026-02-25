@@ -106,6 +106,10 @@ export function initAdmin({ state, openAuthModal }) {
     return Boolean(state.user && state.user.role === 'admin');
   }
 
+  function isAdminHashOpen() {
+    return String(window.location.hash || '') === '#adminPanel';
+  }
+
   function syncControlsFromState() {
     if (searchInput) searchInput.value = state.admin.q;
     if (actionTypeFilter) actionTypeFilter.value = state.admin.actionType;
@@ -119,13 +123,19 @@ export function initAdmin({ state, openAuthModal }) {
   }
 
   function renderVisibility() {
-    const visible = isAdmin();
-    if (navLink) navLink.hidden = !visible;
+    const admin = isAdmin();
+    const visible = admin || isAdminHashOpen();
+    if (navLink) navLink.hidden = false;
     if (panel) panel.classList.toggle('hidden', !visible);
-    if (!visible) {
+    if (!admin) {
       if (summaryNode) summaryNode.innerHTML = '';
       if (actionsNode) actionsNode.innerHTML = '';
-      setText('adminStatus', state.user ? 'Admin role required.' : 'Login with an admin account to view project actions.');
+      setText(
+        'adminStatus',
+        state.user
+          ? 'Admin role required. If you were just promoted, refresh or log in again.'
+          : 'Login with an admin account to view project actions.'
+      );
     }
   }
 
@@ -193,6 +203,10 @@ export function initAdmin({ state, openAuthModal }) {
       syncStateFromControls();
       await refresh();
     });
+  });
+
+  window.addEventListener('hashchange', () => {
+    renderVisibility();
   });
 
   syncControlsFromState();

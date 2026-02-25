@@ -103,10 +103,17 @@ function createApp(deps = {}) {
     return next();
   };
 
-  const requireAdmin = (req, res, next) => {
+  const requireAdmin = async (req, res, next) => {
     if (!req.user?.id) return res.status(401).json({ error: 'Authentication required' });
-    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
-    return next();
+    try {
+      const freshUser = await repository.findUserById(req.user.id);
+      if (!freshUser) return res.status(401).json({ error: 'Authentication required' });
+      if (freshUser.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+      req.user = { ...req.user, role: freshUser.role, email: freshUser.email, fullName: freshUser.fullName };
+      return next();
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
   };
 
   const logProjectAction = async (
