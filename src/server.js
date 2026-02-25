@@ -1946,7 +1946,7 @@ function createApp(deps = {}) {
     }
   });
 
-  app.put('/api/orders/:id/status', requireRole(['seller', 'delivery']), async (req, res) => {
+  app.put('/api/orders/:id/status', requireAuth, async (req, res) => {
     const orderId = parseId(req.params.id);
     if (!orderId) return res.status(400).json({ error: 'Invalid order id' });
     try {
@@ -1969,6 +1969,7 @@ function createApp(deps = {}) {
       const deliveryAllowed = new Set(['shipping', 'out_for_delivery', 'delivered']);
 
       const isSellerActor = Number(existing.sellerId) === Number(req.user.id);
+      const isBuyerActor = Number(existing.buyerId) === Number(req.user.id);
       let isDeliveryActor = false;
       if (role === 'delivery' && typeof repository.canDeliveryUserManageOrder === 'function') {
         isDeliveryActor = await repository.canDeliveryUserManageOrder({
@@ -1978,16 +1979,31 @@ function createApp(deps = {}) {
         });
       }
 
+      let allowBuyerActor = false;
+      if (!isAdmin && nextStatus === 'cancelled' && isBuyerActor) {
+        if (String(existing.status || '') === 'delivered') {
+          return res.status(400).json({ error: 'Delivered orders cannot be cancelled by buyer' });
+        }
+        if (String(existing.status || '') === 'cancelled') {
+          return res.status(400).json({ error: 'Order is already cancelled' });
+        }
+        allowBuyerActor = true;
+      }
+
       if (!isAdmin) {
-        if (role === 'seller') {
-          if (!isSellerActor) return res.status(403).json({ error: 'Only seller can update this order' });
-          if (!sellerAllowed.has(nextStatus)) {
-            return res.status(403).json({ error: 'Seller can set received, packing, shipping, or cancelled' });
-          }
-        } else if (role === 'delivery') {
-          if (!isDeliveryActor) return res.status(403).json({ error: 'Claim delivery job first to update this order' });
-          if (!deliveryAllowed.has(nextStatus)) {
-            return res.status(403).json({ error: 'Delivery can set shipping, out_for_delivery, or delivered' });
+        if (!allowBuyerActor) {
+          if (role === 'seller') {
+            if (!isSellerActor) return res.status(403).json({ error: 'Only seller can update this order' });
+            if (!sellerAllowed.has(nextStatus)) {
+              return res.status(403).json({ error: 'Seller can set received, packing, shipping, or cancelled' });
+            }
+          } else if (role === 'delivery') {
+            if (!isDeliveryActor) return res.status(403).json({ error: 'Claim delivery job first to update this order' });
+            if (!deliveryAllowed.has(nextStatus)) {
+              return res.status(403).json({ error: 'Delivery can set shipping, out_for_delivery, or delivered' });
+            }
+          } else {
+            return res.status(403).json({ error: 'Only buyer can cancel order from client app' });
           }
         }
       }
@@ -1997,6 +2013,8 @@ function createApp(deps = {}) {
           ? sanitizeText(body.tag, 60)
           : role === 'seller' || role === 'delivery'
             ? nextStatus
+            : allowBuyerActor
+              ? 'buyer_cancelled'
             : null;
       const statusNote = typeof body.note === 'string' ? sanitizeText(body.note, 500) : null;
 
@@ -2007,12 +2025,14 @@ function createApp(deps = {}) {
         isAdmin,
         allowSeller: role === 'seller',
         allowDelivery: role === 'delivery',
+        allowBuyer: allowBuyerActor,
         statusTag,
         statusNote
       });
       if (!updated) return res.status(404).json({ error: 'Order not found or forbidden' });
 
       let orderDeliveryJob = null;
+      let cancelledDeliveryJobs = [];
       let deliveryAudienceIds = [];
       const normalizedDeliveryMode = String(updated.deliveryMode || '').toLowerCase();
       const needsDeliveryHandoff = true;
@@ -2051,6 +2071,9 @@ function createApp(deps = {}) {
             )
           ];
         }
+      }
+      if (updated.status === 'cancelled' && typeof repository.cancelActiveDeliveryJobsForOrder === 'function') {
+        cancelledDeliveryJobs = await repository.cancelActiveDeliveryJobsForOrder(updated.id).catch(() => []);
       }
 
       await logProjectAction(req, {
@@ -2102,6 +2125,29 @@ function createApp(deps = {}) {
             entityType: 'marketplace_order',
             entityId: updated.id
           });
+        }
+        if (updated.status === 'cancelled' && cancelledDeliveryJobs.length) {
+          const claimedDeliveryIds = [
+            ...new Set(
+              cancelledDeliveryJobs
+                .map((job) => Number(job.claimedBy))
+                .filter((id) => Number.isFinite(id) && id > 0 && id !== Number(req.user.id))
+            )
+          ];
+          await Promise.all(
+            claimedDeliveryIds.map((userId) =>
+              repository
+                .createUserNotification({
+                  userId,
+                  kind: 'delivery_cancelled',
+                  title: 'Delivery job cancelled',
+                  body: `Order #${updated.id} was cancelled by buyer.`,
+                  entityType: 'marketplace_order',
+                  entityId: updated.id
+                })
+                .catch(() => null)
+            )
+          );
         }
         if (orderDeliveryJob?.created && deliveryAudienceIds.length) {
           await Promise.all(
@@ -2168,6 +2214,24 @@ function createApp(deps = {}) {
           url: `${appConfig.appBaseUrl}/delivery#deliveryJobsPanel`
         });
       }
+      if (updated.status === 'cancelled' && cancelledDeliveryJobs.length) {
+        const claimedDeliveryIds = [
+          ...new Set(
+            cancelledDeliveryJobs
+              .map((job) => Number(job.claimedBy))
+              .filter((id) => Number.isFinite(id) && id > 0 && id !== Number(req.user.id))
+          )
+        ];
+        await Promise.all(
+          claimedDeliveryIds.map((deliveryUserId) =>
+            pushToUser(deliveryUserId, {
+              title: 'Delivery job cancelled',
+              body: `Order #${updated.id} was cancelled by buyer.`,
+              url: `${appConfig.appBaseUrl}/delivery#deliveryWorkPanel`
+            }).catch(() => null)
+          )
+        );
+      }
 
       publishRealtimeEvent('orders.updated', { type: 'order_status_updated', orderId: updated.id }, updated.buyerId);
       publishRealtimeEvent('orders.updated', { type: 'order_status_updated', orderId: updated.id }, updated.sellerId);
@@ -2181,16 +2245,40 @@ function createApp(deps = {}) {
           orderId: updated.id
         });
       }
+      for (const job of cancelledDeliveryJobs) {
+        publishRealtimeEvent('delivery.updated', {
+          type: 'delivery_job_cancelled',
+          deliveryJobId: job.id,
+          orderId: updated.id
+        });
+      }
       publishRealtimeEvent('notifications.invalidate', { source: 'order.status_update' }, updated.buyerId);
       publishRealtimeEvent('notifications.invalidate', { source: 'order.status_update' }, updated.sellerId);
       if (updated.deliveryPartnerId) {
         publishRealtimeEvent('notifications.invalidate', { source: 'order.status_update' }, updated.deliveryPartnerId);
       }
+      if (updated.status === 'cancelled' && cancelledDeliveryJobs.length) {
+        const claimedDeliveryIds = [
+          ...new Set(
+            cancelledDeliveryJobs
+              .map((job) => Number(job.claimedBy))
+              .filter((id) => Number.isFinite(id) && id > 0)
+          )
+        ];
+        for (const deliveryUserId of claimedDeliveryIds) {
+          publishRealtimeEvent('notifications.invalidate', { source: 'order.cancelled' }, deliveryUserId);
+        }
+      }
       for (const deliveryUserId of deliveryAudienceIds) {
         publishRealtimeEvent('notifications.invalidate', { source: 'order.shipping_handoff' }, deliveryUserId);
       }
 
-      return res.json({ ok: true, order: updated, deliveryJob: orderDeliveryJob || null });
+      return res.json({
+        ok: true,
+        order: updated,
+        deliveryJob: orderDeliveryJob || null,
+        cancelledDeliveryJobs
+      });
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
       return res.status(500).json({ error: error.message });

@@ -19,6 +19,10 @@ function orderStatusRail(status) {
   }).join('')}</div>`;
 }
 
+function canBuyerCancel(status) {
+  return ['received', 'packing', 'shipping', 'out_for_delivery'].includes(String(status || ''));
+}
+
 export function initOrders({ state, openAuthModal }) {
   const panel = el('ordersPanel');
   const navLink = el('ordersNavLink');
@@ -126,6 +130,11 @@ export function initOrders({ state, openAuthModal }) {
                     ? `<button class="kb-btn kb-btn-primary order-rate-btn" data-id="${item.id}" type="button">Rate Delivery</button>`
                     : ''
                 }
+                ${
+                  canBuyerCancel(item.status)
+                    ? `<button class="kb-btn kb-btn-ghost order-cancel-btn" data-id="${item.id}" type="button">Cancel Order</button>`
+                    : ''
+                }
               </div>
             </div>
           </article>`;
@@ -179,6 +188,28 @@ export function initOrders({ state, openAuthModal }) {
       activeRatingOrderId = Number(order.id);
       renderRatingModal(order);
       showModal('orderRatingModal');
+      return;
+    }
+
+    const cancelBtn = target.closest('.order-cancel-btn');
+    if (cancelBtn) {
+      const order = currentOrders.find((item) => Number(item.id) === Number(cancelBtn.dataset.id));
+      if (!order) return;
+      if (!canBuyerCancel(order.status)) return;
+      const confirmCancel = window.confirm(`Cancel order #${order.id}?`);
+      if (!confirmCancel) return;
+      const statusNode = el('ordersStatus');
+      if (statusNode) statusNode.textContent = `Cancelling order #${order.id}...`;
+      try {
+        await api.updateOrderStatus(order.id, 'cancelled', {
+          tag: 'buyer_cancelled',
+          note: 'Cancelled by buyer from client app'
+        });
+        if (statusNode) statusNode.textContent = `Order #${order.id} cancelled.`;
+        await refresh();
+      } catch (error) {
+        if (statusNode) statusNode.textContent = error.message || 'Unable to cancel order';
+      }
       return;
     }
 

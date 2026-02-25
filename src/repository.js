@@ -2069,6 +2069,31 @@ function createRepository(queryFn) {
       return { ...created, created: true };
     },
 
+    async cancelActiveDeliveryJobsForOrder(orderId) {
+      const result = await run(
+        `UPDATE delivery_jobs
+         SET
+          status = 'cancelled',
+          updated_at = NOW()
+         WHERE order_id = $1
+           AND status IN ('open', 'claimed', 'picked', 'in_transit', 'on_the_way')
+         RETURNING
+          id,
+          order_id AS "orderId",
+          listing_id AS "listingId",
+          pickup_city AS "pickupCity",
+          pickup_area_code AS "pickupAreaCode",
+          delivery_mode AS "deliveryMode",
+          status,
+          created_by AS "createdBy",
+          claimed_by AS "claimedBy",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"`,
+        [orderId]
+      );
+      return result.rows || [];
+    },
+
     async listDeliveryJobs({ lat = null, lon = null, radiusKm = 250, city = '', areaCode = '', status = 'open', limit = 25, offset = 0 }) {
       const values = [];
       const where = [];
@@ -2637,6 +2662,7 @@ function createRepository(queryFn) {
       isAdmin = false,
       allowSeller = false,
       allowDelivery = false,
+      allowBuyer = false,
       statusTag = null,
       statusNote = null
     }) {
@@ -2653,19 +2679,19 @@ function createRepository(queryFn) {
             ELSE mo.paycheck_status
           END,
           seller_status_tag = CASE
-            WHEN $3::boolean AND $7::text IS NOT NULL THEN $7::text
+            WHEN $3::boolean AND $8::text IS NOT NULL THEN $8::text
             ELSE mo.seller_status_tag
           END,
           seller_note = CASE
-            WHEN $3::boolean AND $8::text IS NOT NULL THEN $8::text
+            WHEN $3::boolean AND $9::text IS NOT NULL THEN $9::text
             ELSE mo.seller_note
           END,
           delivery_status_tag = CASE
-            WHEN $6::boolean AND $7::text IS NOT NULL THEN $7::text
+            WHEN $6::boolean AND $8::text IS NOT NULL THEN $8::text
             ELSE mo.delivery_status_tag
           END,
           delivery_note = CASE
-            WHEN $6::boolean AND $8::text IS NOT NULL THEN $8::text
+            WHEN $6::boolean AND $9::text IS NOT NULL THEN $9::text
             ELSE mo.delivery_note
           END,
           updated_at = NOW()
@@ -2673,6 +2699,7 @@ function createRepository(queryFn) {
            AND (
              $2::boolean
              OR ($3::boolean AND mo.seller_id = $5)
+             OR ($7::boolean AND mo.buyer_id = $5)
              OR (
                $6::boolean AND EXISTS (
                  SELECT 1
@@ -2686,7 +2713,17 @@ function createRepository(queryFn) {
              )
            )
          RETURNING mo.id`,
-        [orderId, Boolean(isAdmin), Boolean(allowSeller), status, actorId, Boolean(allowDelivery), statusTag, statusNote]
+        [
+          orderId,
+          Boolean(isAdmin),
+          Boolean(allowSeller),
+          status,
+          actorId,
+          Boolean(allowDelivery),
+          Boolean(allowBuyer),
+          statusTag,
+          statusNote
+        ]
       );
       if (!result.rows[0]?.id) return null;
       return this.getMarketplaceOrderById(result.rows[0].id);

@@ -345,6 +345,7 @@ async function refreshJobs() {
   try {
     const statusFilter = el('deliveryStatusFilter')?.value || 'open';
     const baseFilters = buildBaseFilters();
+    const globalFilters = { limit: 40, offset: 0 };
     let jobs = [];
 
     if (statusFilter === 'all') {
@@ -352,6 +353,11 @@ async function refreshJobs() {
       const results = await Promise.all(
         statuses.map((status) => api.listDeliveryJobs({ ...baseFilters, status }).catch(() => ({ data: [] })))
       );
+      const fallbackResults =
+        currentCoords &&
+        (await Promise.all(
+          statuses.map((status) => api.listDeliveryJobs({ ...globalFilters, status }).catch(() => ({ data: [] })))
+        ));
       const seen = new Set();
       for (const result of results) {
         for (const item of result.data || []) {
@@ -361,9 +367,31 @@ async function refreshJobs() {
           jobs.push(item);
         }
       }
+      if (Array.isArray(fallbackResults)) {
+        for (const result of fallbackResults) {
+          for (const item of result.data || []) {
+            const key = Number(item.id);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            jobs.push(item);
+          }
+        }
+      }
     } else {
       const result = await api.listDeliveryJobs({ ...baseFilters, status: statusFilter });
       jobs = result.data || [];
+      if (currentCoords) {
+        const fallback = await api
+          .listDeliveryJobs({ ...globalFilters, status: statusFilter })
+          .catch(() => ({ data: [] }));
+        const seen = new Set(jobs.map((item) => Number(item.id)));
+        for (const item of fallback.data || []) {
+          const key = Number(item.id);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          jobs.push(item);
+        }
+      }
     }
 
     jobs.sort((a, b) => Number(b.id) - Number(a.id));
@@ -382,7 +410,7 @@ async function refreshWorkJobs() {
     return;
   }
   try {
-    const baseFilters = buildBaseFilters();
+    const baseFilters = { limit: 40, offset: 0 };
     const results = await Promise.all(
       DELIVERY_WORK_STATUSES.map((status) =>
         api.listDeliveryJobs({ ...baseFilters, status }).catch(() => ({ data: [] }))
