@@ -67,6 +67,17 @@ npm test
 
 ## Admin panel
 - Admin panel is available in the web UI (`Admin` nav tab) only for users with `role = 'admin'`.
+- You can bootstrap/reset admin credentials from env on every startup:
+  ```env
+  ADMIN_EMAIL=your-admin@email.com
+  ADMIN_PASSWORD=your_strong_password
+  ADMIN_FULL_NAME=KitaabPadho Admin
+  ADMIN_PHONE_NUMBER=9999999999
+  ```
+- If `ADMIN_EMAIL` + `ADMIN_PASSWORD` are set, startup will:
+  - create the admin user if it does not exist
+  - force role to `admin`
+  - reset password to `ADMIN_PASSWORD`
 - Promote a user manually in Postgres:
   ```sql
   UPDATE users SET role = 'admin' WHERE email = 'your-admin@email.com';

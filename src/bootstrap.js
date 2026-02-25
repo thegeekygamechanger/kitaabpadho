@@ -1,6 +1,7 @@
 const fs = require('fs/promises');
 const path = require('path');
 const { pool } = require('./db');
+const { hashPassword } = require('./auth');
 
 const MIGRATION_LOCK_ID = 81248931;
 
@@ -74,6 +75,44 @@ async function runDbBootstrap({ logger = console } = {}) {
       } catch (error) {
         await client.query('ROLLBACK');
         throw new Error(`Migration failed (${migration.name}): ${error.message}`);
+      }
+    }
+
+    const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+    const adminPassword = String(process.env.ADMIN_PASSWORD || '');
+    const adminFullName = String(process.env.ADMIN_FULL_NAME || '').trim() || 'KitaabPadho Admin';
+    const adminPhoneNumber = String(process.env.ADMIN_PHONE_NUMBER || '').trim();
+
+    if (adminEmail || adminPassword) {
+      if (!adminEmail || !adminPassword) {
+        logger.warn('Admin bootstrap skipped: set both ADMIN_EMAIL and ADMIN_PASSWORD together.');
+      } else if (adminPassword.length < 8) {
+        logger.warn('Admin bootstrap skipped: ADMIN_PASSWORD must be at least 8 characters.');
+      } else {
+        const passwordHash = await hashPassword(adminPassword);
+        const existingAdmin = await client.query(`SELECT id FROM users WHERE lower(email) = lower($1) LIMIT 1`, [adminEmail]);
+
+        if (existingAdmin.rowCount > 0) {
+          const adminId = existingAdmin.rows[0].id;
+          await client.query(
+            `UPDATE users
+             SET
+              password_hash = $2,
+              role = 'admin',
+              full_name = COALESCE(NULLIF($3, ''), full_name),
+              phone_number = COALESCE(NULLIF($4, ''), phone_number)
+             WHERE id = $1`,
+            [adminId, passwordHash, adminFullName, adminPhoneNumber]
+          );
+          logger.log(`Admin bootstrap complete. Updated admin credentials for ${adminEmail}.`);
+        } else {
+          await client.query(
+            `INSERT INTO users (email, full_name, phone_number, password_hash, role)
+             VALUES ($1, $2, $3, $4, 'admin')`,
+            [adminEmail, adminFullName, adminPhoneNumber || null, passwordHash]
+          );
+          logger.log(`Admin bootstrap complete. Created admin user ${adminEmail}.`);
+        }
       }
     }
 
