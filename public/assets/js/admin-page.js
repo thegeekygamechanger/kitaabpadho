@@ -369,13 +369,27 @@ async function checkAdminSession() {
     const isAdmin = me.authenticated && me.user?.role === 'admin';
     el('adminLoginPanel')?.classList.toggle('hidden', isAdmin);
     el('adminMainPanel')?.classList.toggle('hidden', !isAdmin);
+    if (!me.authenticated) {
+      setText('adminLoginStatus', 'Login with an admin account to open this panel.');
+      setText('adminStatus', 'Admin login required.');
+      return;
+    }
+    if (!isAdmin) {
+      const role = me.user?.role || 'unknown';
+      setText('adminLoginStatus', `Logged in as ${role}. Admin role is required.`);
+      setText('adminStatus', 'Current account is not an admin account.');
+      return;
+    }
+    setText('adminLoginStatus', `Admin session active: ${me.user?.email || ''}`);
     if (isAdmin) {
       await refreshAdminData();
       await refreshCrudData();
     }
-  } catch {
+  } catch (error) {
     el('adminLoginPanel')?.classList.remove('hidden');
     el('adminMainPanel')?.classList.add('hidden');
+    setText('adminLoginStatus', error.message || 'Unable to validate admin session.');
+    setText('adminStatus', 'Unable to load admin panel.');
   }
 }
 
@@ -388,8 +402,13 @@ el('adminLoginForm')?.addEventListener('submit', async (event) => {
       email: form.email.value.trim(),
       password: form.password.value
     });
+    const me = await api.authMe();
+    if (!me.authenticated || me.user?.role !== 'admin') {
+      await api.authLogout();
+      throw new Error('This account is not admin. Please login with admin credentials.');
+    }
     form.reset();
-    setText('adminLoginStatus', 'Logged in.');
+    setText('adminLoginStatus', 'Logged in as admin.');
     await checkAdminSession();
   } catch (error) {
     setText('adminLoginStatus', error.message || 'Admin login failed');

@@ -8,6 +8,8 @@ export const state = {
     address: '',
     areaOptions: [],
     nearbyCities: [],
+    localityOptions: [],
+    localitySelectionMap: {},
     radiusKm: 200
   },
   marketplace: {

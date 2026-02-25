@@ -18,6 +18,27 @@ function canManageListing(item) {
   return currentUser.role === 'admin' || Number(item.createdBy) === Number(currentUser.id);
 }
 
+function syncPortalVisibility() {
+  const loggedIn = Boolean(currentUser);
+  const isAdminUser = currentUser?.role === 'admin';
+  const canUseSellerWorkspace = loggedIn && !isAdminUser;
+
+  el('sellerPostingPanel')?.classList.toggle('hidden', !canUseSellerWorkspace);
+  el('sellerListingsPanel')?.classList.toggle('hidden', !canUseSellerWorkspace);
+
+  if (!loggedIn) {
+    setText('sellerPortalHint', 'Login to post and manage your listings.');
+    return;
+  }
+
+  if (isAdminUser) {
+    setText('sellerPortalHint', 'Admin account detected. Use /admin for admin actions.');
+    return;
+  }
+
+  setText('sellerPortalHint', 'Seller workspace ready. You can post, edit, and delete your listings.');
+}
+
 async function refreshAuth() {
   try {
     const me = await api.authMe();
@@ -27,6 +48,7 @@ async function refreshAuth() {
     currentUser = null;
     setText('sellerAuthBadge', 'Guest');
   }
+  syncPortalVisibility();
 }
 
 function renderListings(items) {
@@ -64,6 +86,11 @@ function renderListings(items) {
 }
 
 async function refreshListings() {
+  if (!currentUser || currentUser.role === 'admin') {
+    currentListings = [];
+    renderListings([]);
+    return;
+  }
   try {
     const result = await api.listListings({ limit: 24, offset: 0, sort: 'newest' });
     currentListings = Array.isArray(result.data) ? result.data : [];
@@ -84,7 +111,13 @@ el('sellerLoginForm')?.addEventListener('submit', async (event) => {
     });
     form.reset();
     await refreshAuth();
+    if (currentUser?.role === 'admin') {
+      setText('sellerAuthStatus', 'This is an admin account. Open /admin for admin portal.');
+      await refreshListings();
+      return;
+    }
     setText('sellerAuthStatus', 'Login successful.');
+    await refreshListings();
   } catch (error) {
     setText('sellerAuthStatus', error.message || 'Login failed');
   }
@@ -212,6 +245,8 @@ el('sellerLogoutBtn')?.addEventListener('click', async () => {
     await api.authLogout();
   } finally {
     await refreshAuth();
+    currentListings = [];
+    renderListings([]);
     window.location.reload();
   }
 });

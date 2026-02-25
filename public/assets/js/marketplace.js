@@ -14,6 +14,10 @@ function listingTypeClass(type) {
   return `type-${type || 'buy'}`;
 }
 
+function primaryActionLabel(type) {
+  return type === 'rent' ? 'Rent Now' : 'Buy Now';
+}
+
 export function initMarketplace({ state }) {
   const listingsGrid = el('listingsGrid');
   const categoryFilter = el('categoryFilter');
@@ -97,7 +101,10 @@ export function initMarketplace({ state }) {
             <div class="card-price">${formatInr(item.price)}</div>
             <p class="muted">${escapeHtml(String(item.description || '').slice(0, 90))}</p>
             <div class="card-actions">
-              <button class="kb-btn kb-btn-dark view-listing-btn" type="button" data-id="${item.id}">View</button>
+              <button class="kb-btn kb-btn-primary view-listing-btn" type="button" data-id="${item.id}">${primaryActionLabel(
+                item.listingType
+              )}</button>
+              <button class="kb-btn kb-btn-dark view-listing-btn" type="button" data-id="${item.id}">View Details</button>
             </div>
           </div>
         </article>`;
@@ -122,44 +129,71 @@ export function initMarketplace({ state }) {
       currentListing = listing;
       const canManage = canManageListing(listing);
       const media = Array.isArray(listing.media) ? listing.media : [];
-      const mediaHtml =
-        media.length === 0
-          ? '<p class="muted">No media uploaded yet.</p>'
-          : media
-              .map((item) => {
-                if (item.mediaType?.startsWith('image/')) {
-                  return `<img src="${escapeHtml(item.url || '')}" alt="" style="width:100%;max-width:220px;border-radius:10px" />`;
-                }
-                return `<span class="muted">Non-image media not supported.</span>`;
-              })
-              .join('');
+      const imageMedia = media.filter((item) => item.mediaType?.startsWith('image/') && item.url);
+      const heroMedia = imageMedia[0];
+      const actionLabel = primaryActionLabel(listing.listingType);
+      const chips = [
+        `<span class="pill ${listingTypeClass(listing.listingType)}">${escapeHtml(listing.listingType || 'buy')}</span>`,
+        `<span class="pill type-buy">${escapeHtml(listing.category || 'stationery')}</span>`,
+        `<span class="pill type-rent">${escapeHtml(listing.sellerType || 'student')}</span>`
+      ].join('');
+      const paymentText = Array.isArray(listing.paymentModes) && listing.paymentModes.length ? listing.paymentModes.join(', ') : 'cod';
 
       listingDetailContent.innerHTML = `
-        <h3>${escapeHtml(listing.title)}</h3>
-        <p class="muted">${escapeHtml(listing.city)} | ${escapeHtml(
-        (listing.areaCode || 'other').replaceAll('_', ' ')
-      )}</p>
-        <p><strong>${formatInr(listing.price)}</strong> | ${escapeHtml(listing.listingType)}</p>
-        <p class="muted">Seller Type: ${escapeHtml(listing.sellerType || 'student')} | Delivery: ${escapeHtml(
-        listing.deliveryMode || 'peer_to_peer'
-      )}</p>
-        <p class="muted">Payments: ${escapeHtml(Array.isArray(listing.paymentModes) ? listing.paymentModes.join(', ') : 'cod')}</p>
-        <p>${escapeHtml(listing.description)}</p>
-        <p class="muted">Owner: ${escapeHtml(listing.ownerName || 'Student')} ${
-        listing.ownerEmail ? `(${escapeHtml(listing.ownerEmail)})` : ''
-      }</p>
-        <div class="drawer-actions">
-          <button class="kb-btn kb-btn-primary razorpay-order-btn" data-id="${listing.id}" data-amount="${Number(listing.price || 0)}" type="button">
-            Create Razorpay Order
-          </button>
-          ${
-            canManage
-              ? `<button class="kb-btn kb-btn-dark edit-listing-btn" data-id="${listing.id}" type="button">Edit</button>
-                 <button class="kb-btn kb-btn-dark delete-listing-btn" data-id="${listing.id}" type="button">Delete</button>`
-              : ''
-          }
-        </div>
-        <div style="display:flex;flex-wrap:wrap;gap:0.6rem">${mediaHtml}</div>
+        <article class="listing-detail">
+          <div class="listing-detail-media">
+            <div class="listing-detail-main-media">
+              ${
+                heroMedia
+                  ? `<img id="listingDetailMainImage" src="${escapeHtml(heroMedia.url)}" alt="${escapeHtml(listing.title || 'Listing image')}" />`
+                  : `<div class="listing-detail-no-media">No product image uploaded</div>`
+              }
+            </div>
+            ${
+              imageMedia.length > 1
+                ? `<div class="listing-detail-thumb-row">
+                    ${imageMedia
+                      .slice(0, 8)
+                      .map(
+                        (item) => `<button class="listing-thumb-btn" type="button" data-url="${escapeHtml(item.url)}">
+                          <img src="${escapeHtml(item.url)}" alt="listing thumb" />
+                        </button>`
+                      )
+                      .join('')}
+                  </div>`
+                : ''
+            }
+          </div>
+          <div class="listing-detail-info">
+            <h3>${escapeHtml(listing.title)}</h3>
+            <div class="card-meta">${chips}</div>
+            <p class="listing-detail-price">${formatInr(listing.price)}</p>
+            <p class="muted">Seller: ${escapeHtml(listing.ownerName || 'Student')} ${listing.ownerEmail ? `(${escapeHtml(listing.ownerEmail)})` : ''}</p>
+            <p class="muted">Location: ${escapeHtml(listing.city || 'Unknown')} | ${escapeHtml(
+              (listing.areaCode || 'other').replaceAll('_', ' ')
+            )}</p>
+            <p class="muted">Delivery: ${escapeHtml(listing.deliveryMode || 'peer_to_peer')} | Payments: ${escapeHtml(paymentText)}</p>
+            <p class="listing-detail-description">${escapeHtml(listing.description || '')}</p>
+            <div class="drawer-actions">
+              <button class="kb-btn kb-btn-primary listing-primary-action-btn" data-id="${listing.id}" data-amount="${Number(
+        listing.price || 0
+      )}" data-kind="${escapeHtml(listing.listingType || 'buy')}" type="button">
+                ${actionLabel}
+              </button>
+              <button class="kb-btn kb-btn-dark razorpay-order-btn" data-id="${listing.id}" data-amount="${Number(
+        listing.price || 0
+      )}" type="button">
+                Create Razorpay Order
+              </button>
+              ${
+                canManage
+                  ? `<button class="kb-btn kb-btn-dark edit-listing-btn" data-id="${listing.id}" type="button">Edit</button>
+                     <button class="kb-btn kb-btn-dark delete-listing-btn" data-id="${listing.id}" type="button">Delete</button>`
+                  : ''
+              }
+            </div>
+          </div>
+        </article>
       `;
       showModal('listingDetailModal');
     } catch (error) {
@@ -193,6 +227,31 @@ export function initMarketplace({ state }) {
   listingDetailContent?.addEventListener('click', async (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
+    const thumbBtn = target.closest('.listing-thumb-btn');
+    if (thumbBtn) {
+      const mainImage = el('listingDetailMainImage');
+      const nextUrl = thumbBtn.dataset.url || '';
+      if (mainImage instanceof HTMLImageElement && nextUrl) mainImage.src = nextUrl;
+      return;
+    }
+
+    const primaryActionBtn = target.closest('.listing-primary-action-btn');
+    if (primaryActionBtn) {
+      try {
+        const amount = Number(primaryActionBtn.dataset.amount || 0);
+        const listingId = primaryActionBtn.dataset.id || '';
+        const actionKind = primaryActionBtn.dataset.kind === 'rent' ? 'rent' : 'buy';
+        const result = await api.createRazorpayOrder({
+          amount,
+          receipt: `${actionKind}-${listingId}-${Date.now()}`
+        });
+        window.alert(`${actionKind === 'rent' ? 'Rent' : 'Buy'} order ready: ${result.order?.id || 'N/A'}`);
+      } catch (error) {
+        window.alert(error.message || 'Unable to create order');
+      }
+      return;
+    }
+
     const button = target.closest('.razorpay-order-btn');
     if (button) {
       try {

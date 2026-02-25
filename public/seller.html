@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f6fe5" />
     <title>📚 Seller Portal | KitaabPadho</title>
     <link rel="icon" type="image/svg+xml" href="/assets/icons/bookish.svg" />
-    <link rel="stylesheet" href="/assets/css/app.css?v=20260225a" />
+    <link rel="stylesheet" href="/assets/css/app.css?v=20260225b" />
   </head>
   <body>
     <header class="kb-header">
@@ -21,14 +21,13 @@
         <div class="drawer-actions" style="justify-content:end">
           <a class="kb-btn kb-btn-ghost" href="/">Buyer</a>
           <a class="kb-btn kb-btn-ghost" href="/delivery">Delivery</a>
-          <a class="kb-btn kb-btn-ghost" href="/admin">Admin</a>
           <button id="sellerLogoutBtn" class="kb-btn kb-btn-dark" type="button">Logout</button>
         </div>
       </div>
     </header>
 
     <main class="kb-main">
-      <section class="panel">
+      <section id="sellerLoginPanel" class="panel">
         <div class="panel-head">
           <h2>Seller Login</h2>
           <p id="sellerAuthBadge" class="muted">Guest</p>
@@ -39,9 +38,10 @@
           <button class="kb-btn kb-btn-primary" type="submit">Login</button>
         </form>
         <p id="sellerAuthStatus" class="muted"></p>
+        <p id="sellerPortalHint" class="muted">Login to post and manage your listings.</p>
       </section>
 
-      <section class="panel">
+      <section id="sellerPostingPanel" class="panel hidden">
         <div class="panel-head">
           <h2>Post Stationery / Book Listing</h2>
         </div>
@@ -100,7 +100,7 @@
         </form>
       </section>
 
-      <section class="panel">
+      <section id="sellerListingsPanel" class="panel hidden">
         <div class="panel-head">
           <h2>Nearby Marketplace Preview</h2>
           <button id="sellerRefreshListingsBtn" class="kb-btn kb-btn-ghost" type="button">Refresh</button>
@@ -113,6 +113,6 @@
       <p>Made by UPSC aspirant. Built for learners across India. KitaabPadhoIndia. @2026 copyright</p>
     </footer>
 
-    <script type="module" src="/assets/js/seller.js?v=20260225a"></script>
+    <script type="module" src="/assets/js/seller.js?v=20260225b"></script>
   </body>
 </html>

@@ -22,6 +22,7 @@ export function initLocation({ state, onLocationChanged, onAreaChanged }) {
   function renderAreaSelect() {
     if (!topAreaSelect) return;
     topAreaSelect.innerHTML = '';
+    state.location.localitySelectionMap = {};
 
     appendOption(topAreaSelect, 'all', 'All Areas');
     for (const area of state.location.areaOptions || []) {
@@ -44,11 +45,49 @@ export function initLocation({ state, onLocationChanged, onAreaChanged }) {
       topAreaSelect.appendChild(group);
     }
 
-    topAreaSelect.value = state.location.areaSelectValue || 'all';
+    const localityOptions = Array.isArray(state.location.localityOptions) ? state.location.localityOptions : [];
+    if (localityOptions.length > 0) {
+      const group = document.createElement('optgroup');
+      group.label = 'Nearby Localities (GPS)';
+      for (const locality of localityOptions) {
+        const name = String(locality.name || '').trim();
+        if (!name) continue;
+        const filterCity = String(locality.filterCity || locality.city || name).trim();
+        const value = `locality:${encodeURIComponent(name)}`;
+        state.location.localitySelectionMap[value] = filterCity || name;
+        const item = document.createElement('option');
+        item.value = value;
+        const localitySuffix =
+          filterCity && filterCity.toLowerCase() !== name.toLowerCase() ? ` - ${filterCity}` : '';
+        item.textContent = `${name}${localitySuffix}`;
+        group.appendChild(item);
+      }
+      if (group.children.length > 0) topAreaSelect.appendChild(group);
+    }
+
+    const nextSelection = state.location.areaSelectValue || 'all';
+    const hasSelection = Array.from(topAreaSelect.options).some((option) => option.value === nextSelection);
+    topAreaSelect.value = hasSelection ? nextSelection : 'all';
+    if (!hasSelection) state.location.areaSelectValue = 'all';
   }
 
   function setAreaCode(selectionValue) {
     const value = String(selectionValue || 'all');
+    if (value.startsWith('locality:')) {
+      const localityName = decodeURIComponent(value.slice('locality:'.length));
+      const filterCity = state.location.localitySelectionMap?.[value] || localityName;
+      state.location.areaCode = 'all';
+      state.location.selectedCity = filterCity;
+      state.location.areaSelectValue = value;
+      if (topAreaSelect) topAreaSelect.value = value;
+      setActiveAreaChip('all');
+      if (state.location.address) {
+        setText('locationStatus', `${state.location.address} | Locality: ${localityName}`);
+      }
+      onAreaChanged?.({ areaCode: 'all', city: filterCity, locality: localityName });
+      return;
+    }
+
     if (value.startsWith('city:')) {
       const cityName = decodeURIComponent(value.slice(5));
       state.location.areaCode = 'all';
@@ -95,6 +134,25 @@ export function initLocation({ state, onLocationChanged, onAreaChanged }) {
           }))
           .filter((row) => row.name.length > 0)
       : [];
+    state.location.localityOptions = Array.isArray(result.localityOptions)
+      ? result.localityOptions
+          .map((row) => ({
+            name: String(row.name || row.label || '').trim(),
+            filterCity: String(row.filterCity || row.city || '').trim()
+          }))
+          .filter((row) => row.name.length > 0)
+      : [];
+    if (result.current?.locality) {
+      const existing = state.location.localityOptions.some(
+        (row) => row.name.toLowerCase() === String(result.current.locality).toLowerCase()
+      );
+      if (!existing) {
+        state.location.localityOptions.unshift({
+          name: String(result.current.locality),
+          filterCity: String(result.current.city || '')
+        });
+      }
+    }
     if (Array.isArray(result.areaOptions) && result.areaOptions.length > 0) {
       state.location.areaOptions = result.areaOptions.map((row) => ({
         value: row.value,

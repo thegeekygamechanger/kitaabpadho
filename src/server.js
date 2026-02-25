@@ -96,6 +96,44 @@ function titleCaseFromCode(value) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function uniquePushString(target, value) {
+  const normalized = String(value || '').trim();
+  if (normalized.length < 2) return;
+  if (target.some((item) => item.toLowerCase() === normalized.toLowerCase())) return;
+  target.push(normalized);
+}
+
+function deriveLocalityContext(geo, nearbyCities = []) {
+  const address = geo && typeof geo === 'object' ? geo.address || {} : {};
+  const currentCity = String(address.city || address.town || address.village || address.county || '').trim();
+  const currentLocality = String(address.suburb || address.neighbourhood || address.city_district || address.quarter || '').trim();
+  const localityNames = [];
+
+  uniquePushString(localityNames, address.suburb);
+  uniquePushString(localityNames, address.neighbourhood);
+  uniquePushString(localityNames, address.city_district);
+  uniquePushString(localityNames, address.quarter);
+  uniquePushString(localityNames, address.city);
+  uniquePushString(localityNames, address.town);
+  uniquePushString(localityNames, address.village);
+  uniquePushString(localityNames, address.county);
+  for (const cityRow of nearbyCities) {
+    uniquePushString(localityNames, cityRow?.city);
+  }
+
+  const fallbackCity = String(currentCity || nearbyCities?.[0]?.city || '').trim();
+  const localityOptions = localityNames.slice(0, 12).map((name) => ({
+    name,
+    filterCity: fallbackCity || name
+  }));
+
+  return {
+    currentCity,
+    currentLocality,
+    localityOptions
+  };
+}
+
 function truncateText(value, maxLen) {
   return String(value || '').slice(0, maxLen);
 }
@@ -901,13 +939,17 @@ function createApp(deps = {}) {
         { headers: { 'User-Agent': 'kitaabpadho/2.0' } }
       );
       const geo = reverse.ok ? await reverse.json() : {};
+      const localityContext = deriveLocalityContext(geo, nearbyCities);
       return res.json({
         current: {
           latitude: lat,
           longitude: lon,
-          address: geo.display_name || 'Detected location'
+          address: geo.display_name || 'Detected location',
+          city: localityContext.currentCity || '',
+          locality: localityContext.currentLocality || ''
         },
         nearbyCities,
+        localityOptions: localityContext.localityOptions,
         areaOptions: areaRows.map((item) => ({
           value: item.areaCode,
           label: item.areaName || titleCaseFromCode(item.areaCode),
@@ -916,13 +958,20 @@ function createApp(deps = {}) {
         hint: 'Listings are dynamically sorted by distance from your location (200 km radius).'
       });
     } catch {
+      const localityOptions = nearbyCities.slice(0, 8).map((item) => ({
+        name: String(item.city || ''),
+        filterCity: String(item.city || '')
+      }));
       return res.json({
         current: {
           latitude: lat,
           longitude: lon,
-          address: 'Location detected (offline geocoder)'
+          address: 'Location detected (offline geocoder)',
+          city: '',
+          locality: ''
         },
         nearbyCities,
+        localityOptions,
         areaOptions: areaRows.map((item) => ({
           value: item.areaCode,
           label: item.areaName || titleCaseFromCode(item.areaCode),
