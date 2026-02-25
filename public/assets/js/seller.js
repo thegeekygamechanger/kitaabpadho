@@ -70,7 +70,7 @@ function activeSellerTabIds() {
   if (!currentUser) return [];
   if (isSellerAccount()) return ['sellerPostingPanel', 'sellerListingsPanel', 'sellerBannerPanel', 'sellerSupportPanel'];
   if (currentUser.role === 'admin') return ['sellerBannerPanel', 'sellerSupportPanel'];
-  return ['sellerSupportPanel'];
+  return [];
 }
 
 function syncTabView() {
@@ -106,24 +106,29 @@ function syncTabView() {
 function syncPortalVisibility() {
   const loggedIn = Boolean(currentUser);
   const sellerRole = isSellerAccount();
+  const portalAccess = sellerRole || currentUser?.role === 'admin';
   const bannerRole = isBannerManager();
-  const loginVisible = !loggedIn || (!sellerRole && currentUser?.role !== 'admin');
+  const loginVisible = !portalAccess;
+
+  const logoutBtn = el('sellerLogoutBtn');
+  if (logoutBtn) logoutBtn.hidden = !loggedIn;
+  el('sellerPortalNav')?.classList.toggle('hidden', !portalAccess);
 
   el('sellerWorkspaceNav')?.classList.toggle('hidden', !sellerRole);
   el('sellerBannerNav')?.classList.toggle('hidden', !bannerRole);
-  el('sellerSupportNav')?.classList.toggle('hidden', !loggedIn);
+  el('sellerSupportNav')?.classList.toggle('hidden', !portalAccess);
   setSectionVisibility('sellerLoginPanel', loginVisible);
   setSectionVisibility('sellerPostingPanel', sellerRole);
   setSectionVisibility('sellerListingsPanel', sellerRole);
   setSectionVisibility('sellerBannerPanel', bannerRole);
-  setSectionVisibility('sellerSupportPanel', loggedIn);
+  setSectionVisibility('sellerSupportPanel', portalAccess);
   syncTabView();
 
   if (!loggedIn) {
     setText('sellerPortalHint', 'Login to post and manage your listings.');
     return;
   }
-  if (!sellerRole && currentUser?.role !== 'admin') {
+  if (!portalAccess) {
     setText('sellerPortalHint', `Current role is ${currentUser.role}. Seller role required for posting.`);
     return;
   }

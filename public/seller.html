@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f6fe5" />
     <title>&#x1F4DA; Seller Portal | KitaabPadho</title>
     <link rel="icon" type="image/svg+xml" href="/assets/icons/bookish.svg" />
-    <link rel="stylesheet" href="/assets/css/app.css?v=20260226c" />
+    <link rel="stylesheet" href="/assets/css/app.css?v=20260226d" />
   </head>
   <body>
     <header class="kb-header">
@@ -21,10 +21,10 @@
         <div class="drawer-actions" style="justify-content:end">
           <a class="kb-btn kb-btn-ghost" href="/">Buyer</a>
           <a class="kb-btn kb-btn-ghost" href="/delivery">Delivery</a>
-          <button id="sellerLogoutBtn" class="kb-btn kb-btn-dark" type="button">Logout</button>
+          <button id="sellerLogoutBtn" class="kb-btn kb-btn-dark" type="button" hidden>Logout</button>
         </div>
       </div>
-      <nav class="kb-nav">
+      <nav id="sellerPortalNav" class="kb-nav hidden">
         <a id="sellerWorkspaceNav" class="active" href="#sellerPostingPanel">Seller Workspace</a>
         <a id="sellerBannerNav" href="#sellerBannerPanel">Banners</a>
         <a id="sellerSupportNav" href="#sellerSupportPanel">Customer Service</a>
@@ -164,7 +164,7 @@
         <div id="sellerBannerList" class="cards"></div>
       </section>
 
-      <section id="sellerSupportPanel" class="panel">
+      <section id="sellerSupportPanel" class="panel hidden">
         <div class="panel-head">
           <h2>Customer Service Query</h2>
           <button id="sellerSupportRefreshBtn" class="kb-btn kb-btn-ghost" type="button">Refresh</button>
@@ -188,7 +188,7 @@
       <p>Made by UPSC aspirant. Built for learners across India. KitaabPadhoIndia. @2026 copyright</p>
     </footer>
 
-    <script type="module" src="/assets/js/seller.js?v=20260226c"></script>
+    <script type="module" src="/assets/js/seller.js?v=20260226d"></script>
   </body>
 </html>
 

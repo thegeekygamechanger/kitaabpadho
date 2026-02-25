@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0d4cb1" />
     <title>&#x1F4DA; Delivery Executive Portal | KitaabPadho</title>
     <link rel="icon" type="image/svg+xml" href="/assets/icons/bookish.svg" />
-    <link rel="stylesheet" href="/assets/css/app.css?v=20260226c" />
+    <link rel="stylesheet" href="/assets/css/app.css?v=20260226d" />
   </head>
   <body>
     <header class="kb-header">
@@ -22,10 +22,10 @@
           <a class="kb-btn kb-btn-ghost" href="/">Buyer</a>
           <a class="kb-btn kb-btn-ghost" href="/seller">Seller</a>
           <a class="kb-btn kb-btn-ghost" href="/admin">Admin</a>
-          <button id="deliveryLogoutBtn" class="kb-btn kb-btn-dark" type="button">Logout</button>
+          <button id="deliveryLogoutBtn" class="kb-btn kb-btn-dark" type="button" hidden>Logout</button>
         </div>
       </div>
-      <nav class="kb-nav">
+      <nav id="deliveryPortalNav" class="kb-nav hidden">
         <a id="deliveryJobsNav" class="active" href="#deliveryJobsPanel">Delivery Jobs</a>
         <a id="deliverySupportNav" href="#deliverySupportPanel">Customer Service</a>
         <span id="deliveryAuthBadge" class="kb-badge">Guest</span>
@@ -68,14 +68,14 @@
         <p id="deliveryStatus" class="muted">Enable GPS to get nearby delivery jobs up to 250 km.</p>
       </section>
 
-      <section id="deliveryJobsPanel" class="panel">
+      <section id="deliveryJobsPanel" class="panel hidden">
         <div class="panel-head">
           <h2>Open Delivery Jobs</h2>
         </div>
         <div id="deliveryJobs" class="cards"></div>
       </section>
 
-      <section id="deliverySupportPanel" class="panel">
+      <section id="deliverySupportPanel" class="panel hidden">
         <div class="panel-head">
           <h2>Customer Service Query</h2>
           <button id="deliverySupportRefreshBtn" class="kb-btn kb-btn-ghost" type="button">Refresh</button>
@@ -99,7 +99,7 @@
       <p>Made by UPSC aspirant. Built for learners across India. KitaabPadhoIndia. @2026 copyright</p>
     </footer>
 
-    <script type="module" src="/assets/js/delivery.js?v=20260226c"></script>
+    <script type="module" src="/assets/js/delivery.js?v=20260226d"></script>
   </body>
 </html>
 

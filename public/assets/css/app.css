@@ -137,6 +137,12 @@ body {
   transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
 }
 
+.kb-input,
+.kb-select,
+.kb-textarea {
+  width: 100%;
+}
+
 .kb-search input:focus,
 .kb-input:focus,
 .kb-select:focus,
@@ -894,6 +900,17 @@ body {
 .auth-grid h3,
 .auth-grid h4 {
   min-height: 1.5rem;
+}
+
+.admin-login-form {
+  max-width: 420px;
+  display: grid;
+  gap: 0.55rem;
+  align-content: start;
+}
+
+.admin-login-form .kb-btn {
+  width: 100%;
 }
 
 .field-label {

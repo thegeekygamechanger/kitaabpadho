@@ -91,6 +91,12 @@ function syncAdminTabs() {
   }
 }
 
+function syncAdminHeader(authenticated, isAdmin) {
+  const logoutBtn = el('adminLogoutBtn');
+  if (logoutBtn) logoutBtn.hidden = !authenticated;
+  el('adminPortalNav')?.classList.toggle('hidden', !isAdmin);
+}
+
 function renderSummary(summary) {
   const node = el('adminSummary');
   if (!node) return;
@@ -541,6 +547,7 @@ async function checkAdminSession() {
   try {
     const me = await api.authMe();
     const isAdmin = me.authenticated && me.user?.role === 'admin';
+    syncAdminHeader(Boolean(me.authenticated), isAdmin);
     el('adminLoginPanel')?.classList.toggle('hidden', isAdmin);
     el('adminMainPanel')?.classList.toggle('hidden', !isAdmin);
     el('adminBannerPanel')?.classList.toggle('hidden', !isAdmin);
@@ -562,6 +569,7 @@ async function checkAdminSession() {
       await Promise.all([refreshAdminData(), refreshCrudData(), refreshBannerData(), refreshFeedbackData()]);
     }
   } catch (error) {
+    syncAdminHeader(false, false);
     el('adminLoginPanel')?.classList.remove('hidden');
     el('adminMainPanel')?.classList.add('hidden');
     el('adminBannerPanel')?.classList.add('hidden');

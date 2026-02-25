@@ -80,6 +80,9 @@ function syncPortalVisibility() {
   const deliveryRole = isDeliveryAccount();
   const loggedIn = Boolean(currentUser);
   const loginVisible = !loggedIn || !deliveryRole;
+  const logoutBtn = el('deliveryLogoutBtn');
+  if (logoutBtn) logoutBtn.hidden = !loggedIn;
+  el('deliveryPortalNav')?.classList.toggle('hidden', !deliveryRole);
   el('deliveryJobsNav')?.classList.toggle('hidden', !deliveryRole);
   el('deliverySupportNav')?.classList.toggle('hidden', !deliveryRole);
   el('deliveryLoginPanel')?.classList.toggle('hidden', !loginVisible);
