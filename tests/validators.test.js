@@ -109,6 +109,7 @@ test('authRegisterSchema validates optional totp pair', () => {
   const withTotp = authRegisterSchema.parse({
     fullName: 'A User',
     email: 'a@b.com',
+    phoneNumber: '9876543210',
     password: 'StrongPass#123',
     totpSecret: 'JBSWY3DPEHPK3PXP',
     totpCode: '123456'
@@ -120,6 +121,7 @@ test('authRegisterSchema validates optional totp pair', () => {
     authRegisterSchema.parse({
       fullName: 'A User',
       email: 'a@b.com',
+      phoneNumber: '9876543210',
       password: 'StrongPass#123',
       totpSecret: 'JBSWY3DPEHPK3PXP'
     })

@@ -58,7 +58,7 @@ const authRegisterSchema = z
   .object({
     email: z.string().trim().email().max(180),
     fullName: z.string().trim().min(2).max(120),
-    phoneNumber: z.string().trim().regex(/^[0-9]{10,15}$/).optional(),
+    phoneNumber: z.string().trim().regex(/^[0-9]{10,15}$/),
     password: z.string().min(8).max(128),
     totpSecret: z.string().trim().toUpperCase().regex(/^[A-Z2-7]{16,}$/).optional(),
     totpCode: totpCodeSchema.optional()
@@ -81,7 +81,7 @@ const authLoginSchema = z
 
 const profileUpdateSchema = z.object({
   fullName: z.string().trim().min(2).max(120),
-  phoneNumber: z.string().trim().regex(/^[0-9]{10,15}$/).optional().or(z.literal(''))
+  phoneNumber: z.string().trim().regex(/^[0-9]{10,15}$/)
 });
 
 const changePasswordSchema = z

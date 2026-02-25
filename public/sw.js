@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kitaabpadhoindia-shell-v8';
+const CACHE_NAME = 'kitaabpadhoindia-shell-v9';
 const SHELL_ASSETS = [
   '/',
   '/admin',

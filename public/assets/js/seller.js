@@ -100,7 +100,7 @@ el('sellerListingForm')?.addEventListener('submit', async (event) => {
   const paymentModes = Array.from(form.querySelectorAll('input[name="paymentModes"]:checked')).map((node) => node.value);
   setText('sellerListingStatus', 'Publishing listing...');
   try {
-    await api.createListing({
+    const listing = await api.createListing({
       title: form.title.value.trim(),
       description: form.description.value.trim(),
       category: form.category.value,
@@ -114,6 +114,13 @@ el('sellerListingForm')?.addEventListener('submit', async (event) => {
       latitude: Number(form.latitude.value),
       longitude: Number(form.longitude.value)
     });
+
+    const files = Array.from(form.media?.files || []);
+    for (const file of files.slice(0, 5)) {
+      if (!String(file.type || '').startsWith('image/')) continue;
+      await api.uploadListingMedia(listing.id, file);
+    }
+
     form.reset();
     setText('sellerListingStatus', 'Listing published.');
     await refreshListings();

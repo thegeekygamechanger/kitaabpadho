@@ -52,10 +52,7 @@ function boot() {
     }
   }
 
-  const marketplace = initMarketplace({
-    state,
-    openAuthModal: (message) => auth?.openAuthModal(message)
-  });
+  const marketplace = initMarketplace({ state });
 
   const community = initCommunity({
     state,

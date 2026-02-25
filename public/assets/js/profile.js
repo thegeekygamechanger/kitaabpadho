@@ -64,9 +64,14 @@ export function initProfile({ state, openAuthModal, onUserUpdated }) {
     const form = event.currentTarget;
     setText('profileStatus', 'Saving profile...');
     try {
+      const phoneNumber = form.phoneNumber.value.trim();
+      if (!phoneNumber) {
+        setText('profileStatus', 'Phone number is required.');
+        return;
+      }
       await api.updateProfile({
         fullName: form.fullName.value.trim(),
-        phoneNumber: form.phoneNumber.value.trim() || undefined
+        phoneNumber
       });
       const refreshed = await api.authMe();
       state.user = refreshed.authenticated ? refreshed.user : null;

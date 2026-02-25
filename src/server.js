@@ -204,16 +204,40 @@ function createApp(deps = {}) {
   const clearCookieOptions = { ...cookieOptions };
   delete clearCookieOptions.maxAge;
   const sseClients = new Set();
+  app.set('trust proxy', 1);
 
-  const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 40 });
-  const listingWriteLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 80 });
-  const communityWriteLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 80 });
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 60,
+    standardHeaders: true,
+    legacyHeaders: false
+  });
+  const listingWriteLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 120,
+    standardHeaders: true,
+    legacyHeaders: false
+  });
+  const communityWriteLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 120,
+    standardHeaders: true,
+    legacyHeaders: false
+  });
+  const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 1200,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => req.path === '/events/stream'
+  });
 
   app.use(helmet({ contentSecurityPolicy: false }));
   app.use(cors({ origin: appConfig.corsOrigin, credentials: true }));
+  app.use(express.static(path.join(process.cwd(), 'public')));
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
-  app.use(rateLimit({ windowMs: 15 * 60 * 1000, limit: 200 }));
+  app.use('/api', apiLimiter);
 
   app.use((req, _, next) => {
     const token = req.cookies?.[appConfig.sessionCookieName];
@@ -228,8 +252,6 @@ function createApp(deps = {}) {
       : null;
     next();
   });
-
-  app.use(express.static(path.join(process.cwd(), 'public')));
 
   const requireAuth = (req, res, next) => {
     if (!req.user?.id) return res.status(401).json({ error: 'Authentication required' });
@@ -528,7 +550,7 @@ function createApp(deps = {}) {
       const user = await repository.updateUserProfile({
         userId: req.user.id,
         fullName: sanitizeText(body.fullName, 120),
-        phoneNumber: body.phoneNumber ? sanitizeText(body.phoneNumber, 20) : ''
+        phoneNumber: sanitizeText(body.phoneNumber, 20)
       });
       if (!user) return res.status(404).json({ error: 'User not found' });
 
@@ -1150,9 +1172,9 @@ function createApp(deps = {}) {
     if (!listingId) return res.status(400).json({ error: 'Invalid listing id' });
     if (!req.file) return res.status(400).json({ error: 'file is required' });
 
-    const allowed = ['image/', 'video/', 'application/pdf'];
+    const allowed = ['image/'];
     if (!allowed.some((prefix) => req.file.mimetype.startsWith(prefix))) {
-      return res.status(400).json({ error: 'Only image/video/pdf files are supported' });
+      return res.status(400).json({ error: 'Only image files are supported' });
     }
 
     try {
@@ -1195,9 +1217,9 @@ function createApp(deps = {}) {
 
   app.post('/api/media/upload', upload.single('file'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'file is required' });
-    const allowed = ['image/', 'video/', 'application/pdf'];
+    const allowed = ['image/'];
     if (!allowed.some((prefix) => req.file.mimetype.startsWith(prefix))) {
-      return res.status(400).json({ error: 'Only image/video/pdf files are supported' });
+      return res.status(400).json({ error: 'Only image files are supported' });
     }
 
     const key = `uploads/${Date.now()}-${req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;

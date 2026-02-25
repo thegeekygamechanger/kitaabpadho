@@ -14,6 +14,7 @@ export const state = {
     listingType: 'buy',
     q: '',
     category: '',
+    sellerType: '',
     city: '',
     sort: 'newest',
     limit: 24,

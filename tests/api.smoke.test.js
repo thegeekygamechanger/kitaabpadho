@@ -328,6 +328,7 @@ test('API smoke coverage for health/auth/listings/community/ai/location', async 
     body: JSON.stringify({
       fullName: 'Harsh Kumar',
       email: 'harsh@example.com',
+      phoneNumber: '9876543210',
       password: 'StrongPass#123'
     })
   });

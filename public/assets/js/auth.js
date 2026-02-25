@@ -112,10 +112,15 @@ export function initAuth({ state, onAuthChanged }) {
     const form = event.currentTarget;
     setText('authStatus', 'Creating your account...');
     try {
+      const phoneNumber = form.phoneNumber.value.trim();
+      if (!phoneNumber) {
+        setText('authStatus', 'Phone number is required.');
+        return;
+      }
       const payload = {
         fullName: form.fullName.value.trim(),
         email: form.email.value.trim(),
-        phoneNumber: form.phoneNumber.value.trim() || undefined,
+        phoneNumber,
         password: form.password.value
       };
       const totpSecret = form.totpSecret.value.trim().toUpperCase();

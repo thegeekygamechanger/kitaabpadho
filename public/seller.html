@@ -53,8 +53,6 @@
               <option value="notes">Notes</option>
               <option value="stationery">Stationery</option>
               <option value="instrument">Instrument</option>
-              <option value="pdf">PDF</option>
-              <option value="video">Video</option>
             </select>
             <select name="listingType" class="kb-select" required>
               <option value="sell">Sell</option>
@@ -93,6 +91,10 @@
             <label><input type="checkbox" name="paymentModes" value="razorpay" /> Razorpay</label>
           </div>
           <textarea name="description" class="kb-textarea" placeholder="Description" required></textarea>
+          <label class="file-pick">
+            <span>Attach product images</span>
+            <input name="media" type="file" accept="image/*" multiple />
+          </label>
           <button class="kb-btn kb-btn-primary" type="submit">Publish Listing</button>
           <p id="sellerListingStatus" class="muted"></p>
         </form>

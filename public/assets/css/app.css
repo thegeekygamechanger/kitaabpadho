@@ -78,6 +78,24 @@ body {
   background: linear-gradient(145deg, #fff, #eef3ff);
   color: var(--brand-blue);
   font-weight: 800;
+  animation: brandPulse 2.4s ease-in-out infinite;
+}
+
+.kb-brand strong {
+  position: relative;
+}
+
+.kb-brand strong::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  width: 100%;
+  height: 2px;
+  background: rgba(255, 229, 0, 0.9);
+  transform-origin: left;
+  transform: scaleX(0.2);
+  animation: brandLine 2.4s ease-in-out infinite;
 }
 
 .kb-search {
@@ -317,7 +335,7 @@ body {
 
 .filter-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 0.55rem;
   margin-bottom: 0.65rem;
 }
@@ -728,6 +746,30 @@ body {
   }
   to {
     transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes brandPulse {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 0 0 rgba(255, 229, 0, 0);
+  }
+  50% {
+    transform: translateY(-2px) scale(1.04);
+    box-shadow: 0 6px 18px rgba(255, 229, 0, 0.36);
+  }
+}
+
+@keyframes brandLine {
+  0%,
+  100% {
+    transform: scaleX(0.2);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scaleX(1);
     opacity: 1;
   }
 }

@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { el, escapeHtml, formatInr, hideModal, renderEmpty, setText, showModal } from './ui.js';
+import { el, escapeHtml, formatInr, hideModal, renderEmpty, showModal } from './ui.js';
 
 function mediaPreview(media = []) {
   const first = media[0];
@@ -7,22 +7,17 @@ function mediaPreview(media = []) {
   if (first.mediaType?.startsWith('image/')) {
     return `<div class="card-media"><img src="${escapeHtml(first.url || '')}" alt="listing media" /></div>`;
   }
-  if (first.mediaType?.startsWith('video/')) {
-    return `<div class="card-media"><video src="${escapeHtml(first.url || '')}" muted playsinline></video></div>`;
-  }
-  return '<div class="card-media"><strong>PDF Attached</strong></div>';
+  return '<div class="card-media"><strong>Image unavailable</strong></div>';
 }
 
 function listingTypeClass(type) {
   return `type-${type || 'buy'}`;
 }
 
-export function initMarketplace({ state, openAuthModal }) {
+export function initMarketplace({ state }) {
   const listingsGrid = el('listingsGrid');
-  const listingForm = el('listingForm');
-  const toggleListingFormBtn = el('toggleListingFormBtn');
-  const closeListingFormBtn = el('closeListingFormBtn');
   const categoryFilter = el('categoryFilter');
+  const sellerTypeFilter = el('sellerTypeFilter');
   const cityFilter = el('cityFilter');
   const sortFilter = el('sortFilter');
   const applyListingFiltersBtn = el('applyListingFiltersBtn');
@@ -39,6 +34,7 @@ export function initMarketplace({ state, openAuthModal }) {
     const filters = {
       q: state.marketplace.q,
       category: state.marketplace.category,
+      sellerType: state.marketplace.sellerType,
       listingType: state.marketplace.listingType,
       city: state.marketplace.city,
       areaCode: state.location.areaCode,
@@ -56,12 +52,14 @@ export function initMarketplace({ state, openAuthModal }) {
 
   function syncFiltersFromControls() {
     state.marketplace.category = categoryFilter?.value || '';
+    state.marketplace.sellerType = sellerTypeFilter?.value || '';
     state.marketplace.city = cityFilter?.value.trim() || '';
     state.marketplace.sort = sortFilter?.value || 'newest';
   }
 
   function syncControlsFromState() {
     if (categoryFilter) categoryFilter.value = state.marketplace.category;
+    if (sellerTypeFilter) sellerTypeFilter.value = state.marketplace.sellerType;
     if (cityFilter) cityFilter.value = state.marketplace.city;
     if (sortFilter) sortFilter.value = state.marketplace.sort;
   }
@@ -71,7 +69,6 @@ export function initMarketplace({ state, openAuthModal }) {
       const active = button.dataset.type === state.marketplace.listingType;
       button.classList.toggle('active', active);
     });
-    if (listingForm?.listingType) listingForm.listingType.value = state.marketplace.listingType;
   }
 
   function renderListings(items) {
@@ -133,10 +130,7 @@ export function initMarketplace({ state, openAuthModal }) {
                 if (item.mediaType?.startsWith('image/')) {
                   return `<img src="${escapeHtml(item.url || '')}" alt="" style="width:100%;max-width:220px;border-radius:10px" />`;
                 }
-                if (item.mediaType?.startsWith('video/')) {
-                  return `<video src="${escapeHtml(item.url || '')}" controls style="width:100%;max-width:220px;border-radius:10px"></video>`;
-                }
-                return `<a class="kb-btn kb-btn-ghost" href="${escapeHtml(item.url || '#')}" target="_blank" rel="noreferrer">Open PDF</a>`;
+                return `<span class="muted">Non-image media not supported.</span>`;
               })
               .join('');
 
@@ -174,57 +168,6 @@ export function initMarketplace({ state, openAuthModal }) {
       showModal('listingDetailModal');
     }
   }
-
-  async function submitListing(event) {
-    event.preventDefault();
-    if (!state.user) {
-      openAuthModal('Please login to post your listing.');
-      return;
-    }
-
-    const form = event.currentTarget;
-    setText('listingStatus', 'Submitting listing...');
-    try {
-      const payload = {
-        title: form.title.value.trim(),
-        description: form.description.value.trim(),
-        category: form.category.value,
-        listingType: form.listingType.value,
-        sellerType: form.sellerType.value,
-        deliveryMode: form.deliveryMode.value,
-        paymentModes: Array.from(form.querySelectorAll('input[name="paymentModes"]:checked')).map((node) => node.value),
-        price: Number(form.price.value || 0),
-        city: form.city.value.trim(),
-        areaCode: form.areaCode.value,
-        latitude: Number(form.latitude.value),
-        longitude: Number(form.longitude.value)
-      };
-      if (!payload.paymentModes.length) payload.paymentModes = ['cod'];
-
-      const listing = await api.createListing(payload);
-      const files = Array.from(form.media.files || []);
-      for (const file of files.slice(0, 5)) {
-        await api.uploadListingMedia(listing.id, file);
-      }
-
-      setText('listingStatus', `Listing #${listing.id} created successfully.`);
-      form.reset();
-      if (form.listingType) form.listingType.value = state.marketplace.listingType;
-      await refreshListings();
-    } catch (error) {
-      setText('listingStatus', error.message || 'Unable to create listing');
-    }
-  }
-
-  function toggleListingForm(forceHidden) {
-    if (!listingForm) return;
-    const shouldHide = typeof forceHidden === 'boolean' ? forceHidden : !listingForm.classList.contains('hidden');
-    listingForm.classList.toggle('hidden', shouldHide);
-  }
-
-  toggleListingFormBtn?.addEventListener('click', () => toggleListingForm(false));
-  closeListingFormBtn?.addEventListener('click', () => toggleListingForm(true));
-  listingForm?.addEventListener('submit', submitListing);
 
   applyListingFiltersBtn?.addEventListener('click', () => {
     syncFiltersFromControls();
