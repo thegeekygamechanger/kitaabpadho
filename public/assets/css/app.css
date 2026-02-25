@@ -42,17 +42,30 @@ body {
 }
 
 .kb-topbar {
-  display: grid;
-  grid-template-columns: auto 1fr auto auto auto auto auto;
-  gap: 0.6rem;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  padding: 0.75rem 1rem;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.75rem 1rem 0.6rem;
+}
+
+.kb-topbar-market {
+  display: grid;
+  grid-template-columns: minmax(220px, auto) minmax(280px, 1fr) auto auto auto auto auto;
+  align-items: stretch;
+}
+
+.kb-topbar-market > * {
+  min-width: 0;
 }
 
 .kb-topbar .drawer-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.45rem;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .kb-brand {
@@ -106,7 +119,10 @@ body {
 
 .kb-search {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: 100%;
+  min-width: 0;
+  align-items: stretch;
 }
 
 .kb-search input,
@@ -144,10 +160,23 @@ body {
   border-color: #e8d400;
   cursor: pointer;
   font-weight: 700;
+  min-width: 8.2rem;
+  white-space: nowrap;
+}
+
+.kb-topbar-market .kb-search input,
+.kb-topbar-market .kb-search button,
+.kb-topbar-market .kb-select,
+.kb-topbar-market .kb-btn {
+  min-height: 3.05rem;
+}
+
+.kb-topbar-market #topAreaSelect {
+  min-width: 170px;
 }
 
 .kb-select.compact {
-  min-width: 150px;
+  min-width: 170px;
 }
 
 .kb-btn {
@@ -157,6 +186,10 @@ body {
   font: inherit;
   font-weight: 700;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
   transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
 }
 
@@ -1030,35 +1063,37 @@ body {
 }
 
 @media (max-width: 1050px) {
-  .kb-topbar {
-    grid-template-columns: auto 1fr auto auto;
+  .kb-topbar-market {
+    grid-template-columns: minmax(210px, auto) minmax(0, 1fr) repeat(3, auto);
     grid-template-areas:
-      'brand search search search'
-      'area gps install auth';
+      'brand search search search search'
+      'area area gps install auth';
+    row-gap: 0.55rem;
   }
 
-  .kb-brand {
+  .kb-topbar-market .kb-brand {
     grid-area: brand;
   }
 
-  .kb-search {
+  .kb-topbar-market .kb-search {
     grid-area: search;
   }
 
-  #topAreaSelect {
+  .kb-topbar-market #topAreaSelect {
     grid-area: area;
+    width: 100%;
   }
 
-  #locateBtn {
+  .kb-topbar-market #locateBtn {
     grid-area: gps;
   }
 
-  #installBtn {
+  .kb-topbar-market #installBtn {
     grid-area: install;
   }
 
-  #openAuthBtn,
-  #logoutBtn {
+  .kb-topbar-market #openAuthBtn,
+  .kb-topbar-market #logoutBtn {
     grid-area: auth;
     justify-self: end;
   }
@@ -1110,16 +1145,50 @@ body {
   .kb-topbar .drawer-actions {
     width: 100%;
   }
-}
 
-@media (max-width: 620px) {
-  .kb-topbar {
+  .kb-topbar-market {
     grid-template-columns: 1fr 1fr;
     grid-template-areas:
       'brand brand'
       'search search'
-      'area gps'
-      'install auth';
+      'area area'
+      'gps install'
+      'auth auth';
+  }
+
+  .kb-topbar-market .kb-search {
+    grid-template-columns: 1fr;
+    gap: 0.45rem;
+  }
+
+  .kb-topbar-market .kb-search input {
+    border-radius: 10px;
+    border-right: 1px solid var(--line);
+  }
+
+  .kb-topbar-market .kb-search button {
+    border-radius: 10px;
+    min-width: 0;
+    width: 100%;
+  }
+}
+
+@media (max-width: 620px) {
+  .kb-topbar-market {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      'brand'
+      'search'
+      'area'
+      'gps'
+      'install'
+      'auth';
+  }
+
+  .kb-topbar-market #openAuthBtn,
+  .kb-topbar-market #logoutBtn,
+  .kb-topbar-market #installBtn {
+    justify-self: stretch;
   }
 
   .filter-grid,

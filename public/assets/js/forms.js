@@ -47,6 +47,11 @@ function ensureLabel(field, form) {
   field.parentElement?.insertBefore(label, field);
 }
 
+function skipAutoLabeling(form) {
+  if (!(form instanceof HTMLElement)) return false;
+  return form.matches('[data-no-auto-label], .kb-search');
+}
+
 function ensureErrorNode(field) {
   const existing = field.parentElement?.querySelector(`.field-error[data-for="${field.id}"]`);
   if (existing) return existing;
@@ -106,8 +111,10 @@ function wireValidation(form) {
 export function initFormEnhancements(root = document) {
   const forms = Array.from(root.querySelectorAll('form'));
   for (const form of forms) {
-    const fields = form.querySelectorAll('input, select, textarea');
-    fields.forEach((field) => ensureLabel(field, form));
+    if (!skipAutoLabeling(form)) {
+      const fields = form.querySelectorAll('input, select, textarea');
+      fields.forEach((field) => ensureLabel(field, form));
+    }
     wireValidation(form);
   }
 
