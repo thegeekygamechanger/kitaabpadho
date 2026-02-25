@@ -3,10 +3,16 @@ const { z } = require('zod');
 const categories = ['book', 'instrument', 'notes', 'video', 'pdf', 'stationery', 'stationary'];
 const listingTypes = ['rent', 'buy', 'sell'];
 const areaCodes = ['loni_kalbhor', 'hadapsar', 'camp', 'other'];
+const sellerTypes = ['student', 'library', 'reseller', 'wholesaler', 'college', 'individual_seller', 'shop'];
+const deliveryModes = ['peer_to_peer', 'seller_dedicated', 'kpi_dedicated'];
+const paymentModes = ['cod', 'upi', 'card', 'razorpay'];
 
 const categoryEnum = z.enum(categories);
 const listingTypeEnum = z.enum(listingTypes);
 const areaCodeEnum = z.enum(areaCodes);
+const sellerTypeEnum = z.enum(sellerTypes);
+const deliveryModeEnum = z.enum(deliveryModes);
+const paymentModeEnum = z.enum(paymentModes);
 
 const optionalNumber = (schema) =>
   z.preprocess((value) => {
@@ -20,6 +26,9 @@ const listingSchema = z.object({
   description: z.string().trim().min(5).max(1500),
   category: categoryEnum,
   listingType: listingTypeEnum,
+  sellerType: sellerTypeEnum.optional().default('student'),
+  deliveryMode: deliveryModeEnum.optional().default('peer_to_peer'),
+  paymentModes: z.array(paymentModeEnum).min(1).max(4).optional().default(['cod']),
   price: z.number().min(0),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
@@ -31,6 +40,7 @@ const listingQuerySchema = z.object({
   q: z.string().trim().min(1).max(120).optional(),
   category: categoryEnum.optional(),
   listingType: listingTypeEnum.optional(),
+  sellerType: sellerTypeEnum.optional(),
   city: z.string().trim().min(1).max(100).optional(),
   areaCode: z.union([areaCodeEnum, z.literal('all')]).optional(),
   lat: optionalNumber(z.number().min(-90).max(90)),
@@ -47,6 +57,7 @@ const authRegisterSchema = z
   .object({
     email: z.string().trim().email().max(180),
     fullName: z.string().trim().min(2).max(120),
+    phoneNumber: z.string().trim().regex(/^[0-9]{10,15}$/).optional(),
     password: z.string().min(8).max(128),
     totpSecret: z.string().trim().toUpperCase().regex(/^[A-Z2-7]{16,}$/).optional(),
     totpCode: totpCodeSchema.optional()
@@ -68,7 +79,8 @@ const authLoginSchema = z
   });
 
 const profileUpdateSchema = z.object({
-  fullName: z.string().trim().min(2).max(120)
+  fullName: z.string().trim().min(2).max(120),
+  phoneNumber: z.string().trim().regex(/^[0-9]{10,15}$/).optional().or(z.literal(''))
 });
 
 const changePasswordSchema = z
@@ -145,10 +157,52 @@ const aiSchema = z.object({
   radiusKm: optionalNumber(z.number().min(1).max(500))
 });
 
+const totpSignupSetupSchema = z.object({
+  email: z.string().trim().email().max(180),
+  fullName: z.string().trim().min(2).max(120)
+});
+
+const pushToggleSchema = z.object({
+  enabled: z.boolean()
+});
+
+const pushSubscribeSchema = z.object({
+  city: z.string().trim().max(120).optional(),
+  areaCode: z.string().trim().max(120).optional(),
+  lat: optionalNumber(z.number().min(-90).max(90)),
+  lon: optionalNumber(z.number().min(-180).max(180)),
+  subscription: z.object({
+    endpoint: z.string().url().max(2000),
+    keys: z.object({
+      p256dh: z.string().min(16).max(512),
+      auth: z.string().min(8).max(512)
+    })
+  })
+});
+
+const deliveryJobsQuerySchema = z.object({
+  lat: optionalNumber(z.number().min(-90).max(90)),
+  lon: optionalNumber(z.number().min(-180).max(180)),
+  radiusKm: optionalNumber(z.number().min(1).max(500)).default(250),
+  city: z.string().trim().min(1).max(120).optional(),
+  areaCode: z.string().trim().min(1).max(120).optional(),
+  status: z.enum(['open', 'claimed', 'completed', 'cancelled']).optional().default('open'),
+  limit: optionalNumber(z.number().int().min(1).max(100)).default(25),
+  offset: optionalNumber(z.number().int().min(0).max(10000)).default(0)
+});
+
+const razorpayOrderSchema = z.object({
+  amount: z.number().positive(),
+  receipt: z.string().trim().min(2).max(80).optional()
+});
+
 module.exports = {
   categories,
   listingTypes,
   areaCodes,
+  sellerTypes,
+  deliveryModes,
+  paymentModes,
   listingSchema,
   listingQuerySchema,
   authRegisterSchema,
@@ -164,5 +218,10 @@ module.exports = {
   adminUsersQuerySchema,
   adminResetUserPasswordSchema,
   adminChangePasswordSchema,
-  aiSchema
+  aiSchema,
+  totpSignupSetupSchema,
+  pushToggleSchema,
+  pushSubscribeSchema,
+  deliveryJobsQuerySchema,
+  razorpayOrderSchema
 };

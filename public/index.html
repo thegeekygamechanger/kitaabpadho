@@ -4,7 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#2874f0" />
-    <title>KitaabPadhoIndia | Geo Smart Study Marketplace</title>
+    <title>📚 KitaabPadhoIndia | Geo Smart Study Marketplace</title>
+    <link rel="icon" type="image/svg+xml" href="/assets/icons/bookish.svg" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -45,10 +46,12 @@
       </div>
 
       <nav class="kb-nav">
-        <a class="active" href="#marketplace">Marketplace</a>
+        <a class="active" href="#marketplace">Buyer Portal</a>
         <a href="#community">Community</a>
+        <a href="/seller">Become Seller</a>
+        <a href="/delivery">Delivery Exec</a>
         <a id="profileNavLink" href="#profilePanel" hidden>Profile</a>
-        <a id="adminNavLink" href="#adminPanel" hidden>Admin</a>
+        <a href="/admin">Admin</a>
         <a href="#ai">Ask PadhAI</a>
         <button id="notificationsBtn" class="kb-btn kb-btn-ghost notif-btn" hidden type="button">
           Notifications
@@ -138,6 +141,20 @@
               <option value="rent">Rent</option>
               <option value="sell">Sell</option>
             </select>
+            <select name="sellerType" class="kb-select" required>
+              <option value="student">Student</option>
+              <option value="library">Library</option>
+              <option value="reseller">Reseller</option>
+              <option value="wholesaler">Wholesaler</option>
+              <option value="college">College</option>
+              <option value="individual_seller">Individual Seller</option>
+              <option value="shop">Shop</option>
+            </select>
+            <select name="deliveryMode" class="kb-select" required>
+              <option value="peer_to_peer">Peer to Peer</option>
+              <option value="seller_dedicated">Seller Dedicated</option>
+              <option value="kpi_dedicated">KPI Dedicated</option>
+            </select>
             <input name="price" class="kb-input" type="number" min="0" step="0.01" value="0" />
             <input name="city" class="kb-input" placeholder="City" required />
             <select name="areaCode" class="kb-select">
@@ -148,6 +165,12 @@
             </select>
             <input name="latitude" class="kb-input" type="number" step="any" placeholder="Latitude" required />
             <input name="longitude" class="kb-input" type="number" step="any" placeholder="Longitude" required />
+          </div>
+          <div class="payment-modes">
+            <label><input type="checkbox" name="paymentModes" value="cod" checked /> Cash on Delivery</label>
+            <label><input type="checkbox" name="paymentModes" value="upi" /> UPI</label>
+            <label><input type="checkbox" name="paymentModes" value="card" /> Debit/Credit Card</label>
+            <label><input type="checkbox" name="paymentModes" value="razorpay" /> Razorpay</label>
           </div>
           <textarea name="description" class="kb-textarea" placeholder="Description" required></textarea>
           <label class="file-pick">
@@ -215,6 +238,8 @@
           <form id="profileForm" class="drawer">
             <h3>Update Username</h3>
             <input name="fullName" class="kb-input" placeholder="Username / Full name" required />
+            <input name="email" class="kb-input" type="email" placeholder="Email" readonly />
+            <input name="phoneNumber" class="kb-input" type="tel" placeholder="Phone number" />
             <div class="drawer-actions">
               <button class="kb-btn kb-btn-primary" type="submit">Save</button>
             </div>
@@ -248,52 +273,22 @@
             </form>
             <p id="totpStatus" class="muted"></p>
           </div>
+
+          <div class="drawer">
+            <h3>Push Notifications</h3>
+            <p class="muted">Get product updates, nearby alerts, and community message notifications.</p>
+            <label class="toggle-row">
+              <span>Allow notifications</span>
+              <input id="pushToggle" type="checkbox" />
+            </label>
+            <div class="drawer-actions">
+              <button id="savePushToggleBtn" class="kb-btn kb-btn-primary" type="button">Save Push Preference</button>
+            </div>
+            <p id="pushStatus" class="muted"></p>
+          </div>
         </div>
       </section>
-
-      <section id="adminPanel" class="panel hidden">
-        <div class="panel-head">
-          <h2>Admin Panel</h2>
-          <button id="adminRefreshBtn" class="kb-btn kb-btn-ghost" type="button">Refresh</button>
-        </div>
-        <p id="adminStatus" class="muted">Login with an admin account to view project actions.</p>
-
-        <div id="adminSummary" class="admin-summary"></div>
-
-        <div class="filter-grid admin-filter-grid">
-          <input id="adminSearchInput" class="kb-input" placeholder="Search by summary or email" />
-          <input id="adminActionTypeFilter" class="kb-input" placeholder="Action type (example: listing.create)" />
-          <input id="adminEntityTypeFilter" class="kb-input" placeholder="Entity type (example: listing)" />
-          <input id="adminActorIdFilter" class="kb-input" placeholder="User ID (history filter)" />
-          <button id="adminApplyFiltersBtn" class="kb-btn kb-btn-dark" type="button">Apply</button>
-        </div>
-
-        <div class="profile-grid">
-          <form id="adminPasswordForm" class="drawer">
-            <h3>Admin Change Password</h3>
-            <input name="currentPassword" class="kb-input" type="password" placeholder="Current password" required />
-            <input name="newPassword" class="kb-input" type="password" placeholder="New password (min 8)" required />
-            <div class="drawer-actions">
-              <button class="kb-btn kb-btn-primary" type="submit">Update Admin Password</button>
-            </div>
-            <p id="adminPasswordStatus" class="muted"></p>
-          </form>
-
-          <form id="adminUserResetForm" class="drawer">
-            <h3>Reset User Password (No TOTP)</h3>
-            <input name="email" class="kb-input" type="email" placeholder="User email" required />
-            <input name="newPassword" class="kb-input" type="password" placeholder="New password (min 8)" required />
-            <div class="drawer-actions">
-              <button class="kb-btn kb-btn-dark" type="submit">Reset User Password</button>
-            </div>
-            <p id="adminUserResetStatus" class="muted"></p>
-          </form>
-        </div>
-
-        <div id="adminActionsList" class="admin-actions"></div>
-      </section>
-
-      <section id="ai" class="panel">
+<section id="ai" class="panel">
         <div class="panel-head">
           <h2>Ask PadhAI</h2>
           <p class="muted">Gemini primary with Groq fallback. Ask in simple language.</p>
@@ -315,7 +310,7 @@
     </main>
 
     <footer class="kb-footer">
-      <p>Built for learners across India. KitaabPadhoIndia.</p>
+      <p>Made by UPSC aspirant. Built for learners across India. KitaabPadhoIndia. @2026 copyright</p>
     </footer>
 
     <section id="authModal" class="modal hidden" aria-hidden="true">
@@ -335,9 +330,12 @@
             <h4>Signup</h4>
             <input class="kb-input" name="fullName" placeholder="Full name" required />
             <input class="kb-input" name="email" type="email" placeholder="Email" required />
+            <input class="kb-input" name="phoneNumber" type="tel" placeholder="Phone number (optional)" />
             <input class="kb-input" name="password" type="password" placeholder="Password (min 8)" required />
-            <input class="kb-input" name="totpSecret" placeholder="TOTP secret (optional)" />
-            <input class="kb-input" name="totpCode" placeholder="TOTP code (optional)" />
+            <input class="kb-input hidden" name="totpSecret" placeholder="TOTP secret (auto generated)" />
+            <button id="signupTotpSetupBtn" class="kb-btn kb-btn-dark" type="button">Generate TOTP QR</button>
+            <img id="signupTotpQr" alt="TOTP QR" class="signup-qr hidden" />
+            <input class="kb-input" name="totpCode" placeholder="Enter 6-digit TOTP code after scan" />
             <button class="kb-btn kb-btn-ghost" type="submit">Create Account</button>
           </form>
         </div>
@@ -373,4 +371,6 @@
     <script type="module" src="/assets/js/app.js"></script>
   </body>
 </html>
+
+
 

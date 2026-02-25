@@ -5,6 +5,9 @@ const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
 const path = require('path');
 const multer = require('multer');
+const webpush = require('web-push');
+const QRCode = require('qrcode');
+const Razorpay = require('razorpay');
 const config = require('./config');
 const { query } = require('./db');
 const { runDbBootstrap } = require('./bootstrap');
@@ -36,7 +39,12 @@ const {
   adminUsersQuerySchema,
   adminResetUserPasswordSchema,
   adminChangePasswordSchema,
-  aiSchema
+  aiSchema,
+  totpSignupSetupSchema,
+  pushToggleSchema,
+  pushSubscribeSchema,
+  deliveryJobsQuerySchema,
+  razorpayOrderSchema
 } = require('./validators');
 
 function parseId(value) {
@@ -71,7 +79,9 @@ function toPublicUser(user) {
     id: user.id,
     email: user.email,
     fullName: user.fullName,
+    phoneNumber: user.phoneNumber || '',
     role: user.role,
+    pushEnabled: Boolean(user.pushEnabled),
     totpEnabled: Boolean(user.totpEnabled)
   };
 }
@@ -172,6 +182,17 @@ function createApp(deps = {}) {
   const askAiFn = deps.askAiFn || askPadhAI;
   const reverseGeocodeFetch = deps.fetchImpl || fetch;
   const r2EnabledFlag = typeof deps.r2Enabled === 'boolean' ? deps.r2Enabled : r2Enabled;
+  const razorpayClient =
+    appConfig.payments?.razorpayKeyId && appConfig.payments?.razorpayKeySecret
+      ? new Razorpay({
+          key_id: appConfig.payments.razorpayKeyId,
+          key_secret: appConfig.payments.razorpayKeySecret
+        })
+      : null;
+
+  if (appConfig.push?.vapidPublicKey && appConfig.push?.vapidPrivateKey) {
+    webpush.setVapidDetails(appConfig.push.subject, appConfig.push.vapidPublicKey, appConfig.push.vapidPrivateKey);
+  }
 
   const app = express();
   const upload = multer({ limits: { fileSize: 30 * 1024 * 1024 } });
@@ -224,6 +245,20 @@ function createApp(deps = {}) {
     }
   };
 
+  const isUsernameTaken = async (fullName) => {
+    if (!fullName) return false;
+    if (typeof repository.findUserByFullName === 'function') {
+      const user = await repository.findUserByFullName(fullName);
+      return Boolean(user);
+    }
+    try {
+      const existing = await queryFn(`SELECT id FROM users WHERE lower(full_name) = lower($1) LIMIT 1`, [fullName]);
+      return existing.rowCount > 0;
+    } catch {
+      return false;
+    }
+  };
+
   const logProjectAction = async (
     req,
     { actor = req.user, actionType, entityType, entityId = null, summary, details = {} }
@@ -266,7 +301,41 @@ function createApp(deps = {}) {
     }
   };
 
+  const sendWebPushToSubscriptions = async (subscriptions, payload) => {
+    if (!Array.isArray(subscriptions) || subscriptions.length === 0) return 0;
+    if (!appConfig.push?.vapidPublicKey || !appConfig.push?.vapidPrivateKey) return 0;
+
+    const data = JSON.stringify(payload);
+    let delivered = 0;
+    await Promise.all(
+      subscriptions.map(async (subscription) => {
+        try {
+          await webpush.sendNotification(subscription, data);
+          delivered += 1;
+        } catch {
+          // Ignore stale tokens for resilience.
+        }
+      })
+    );
+    return delivered;
+  };
+
+  const pushToUser = async (userId, payload) => {
+    if (!userId || typeof repository.listPushSubscriptionsByUser !== 'function') return 0;
+    const subscriptions = await repository.listPushSubscriptionsByUser({ userId });
+    return sendWebPushToSubscriptions(subscriptions, payload);
+  };
+
   app.get('/api/health', (_, res) => res.json({ ok: true, stack: 'express-neon-r2-pwa' }));
+
+  app.get('/api/portals', (_, res) => {
+    return res.json({
+      buyer: `${appConfig.appBaseUrl}/`,
+      admin: `${appConfig.appBaseUrl}/admin`,
+      seller: `${appConfig.appBaseUrl}/seller`,
+      delivery: `${appConfig.appBaseUrl}/delivery`
+    });
+  });
 
   app.get('/api/events/stream', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
@@ -297,11 +366,38 @@ function createApp(deps = {}) {
     });
   });
 
+  app.post('/api/auth/signup/totp/setup', authLimiter, async (req, res) => {
+    try {
+      const body = totpSignupSetupSchema.parse(req.body);
+      const existingByEmail = await repository.findUserByEmail(body.email);
+      if (existingByEmail) return res.status(409).json({ error: 'Email already registered' });
+      if (await isUsernameTaken(body.fullName)) return res.status(409).json({ error: 'Username already used' });
+
+      const secret = generateTotpSecret();
+      const otpauthUrl = createOtpAuthUrl({
+        issuer: 'KitaabPadhoIndia',
+        accountName: body.email,
+        secret
+      });
+      const qrDataUrl = await QRCode.toDataURL(otpauthUrl, { width: 220, margin: 1 });
+
+      return res.json({
+        secret,
+        otpauthUrl,
+        qrDataUrl
+      });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid input' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post('/api/auth/register', authLimiter, async (req, res) => {
     try {
       const body = authRegisterSchema.parse(req.body);
       const existing = await repository.findUserByEmail(body.email);
       if (existing) return res.status(409).json({ error: 'Email already registered' });
+      if (await isUsernameTaken(body.fullName)) return res.status(409).json({ error: 'Username already used' });
 
       const wantsTotpOnSignup = Boolean(body.totpSecret && body.totpCode);
       if (wantsTotpOnSignup) {
@@ -313,6 +409,7 @@ function createApp(deps = {}) {
       let user = await repository.createUser({
         email: body.email,
         fullName: body.fullName,
+        phoneNumber: body.phoneNumber || '',
         passwordHash
       });
       if (wantsTotpOnSignup && typeof repository.enableTotp === 'function') {
@@ -414,7 +511,8 @@ function createApp(deps = {}) {
       }
       const user = await repository.updateUserProfile({
         userId: req.user.id,
-        fullName: sanitizeText(body.fullName, 120)
+        fullName: sanitizeText(body.fullName, 120),
+        phoneNumber: body.phoneNumber ? sanitizeText(body.phoneNumber, 20) : ''
       });
       if (!user) return res.status(404).json({ error: 'User not found' });
 
@@ -423,7 +521,7 @@ function createApp(deps = {}) {
         entityType: 'user',
         entityId: user.id,
         summary: 'Profile updated',
-        details: { fullName: user.fullName }
+        details: { fullName: user.fullName, phoneNumber: user.phoneNumber || '' }
       });
 
       return res.json({ ok: true, user: toPublicUser(user) });
@@ -469,7 +567,8 @@ function createApp(deps = {}) {
         details: { authMethod: validCurrentPassword ? 'password' : 'totp' }
       });
 
-      return res.json({ ok: true });
+      res.clearCookie(appConfig.sessionCookieName, clearCookieOptions);
+      return res.json({ ok: true, reauthRequired: true });
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
       return res.status(500).json({ error: error.message });
@@ -646,6 +745,86 @@ function createApp(deps = {}) {
     }
   });
 
+  app.get('/api/push/public-key', (_, res) => {
+    return res.json({
+      publicKey: appConfig.push?.vapidPublicKey || ''
+    });
+  });
+
+  app.post('/api/push/toggle', requireAuth, async (req, res) => {
+    try {
+      const { enabled } = pushToggleSchema.parse(req.body);
+      if (typeof repository.setUserPushEnabled !== 'function') {
+        return res.status(500).json({ error: 'Push preference update is not available' });
+      }
+      const user = await repository.setUserPushEnabled({ userId: req.user.id, enabled });
+      return res.json({ ok: true, user: toPublicUser(user) });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/push/subscribe', requireAuth, async (req, res) => {
+    try {
+      const body = pushSubscribeSchema.parse(req.body);
+      if (typeof repository.upsertPushSubscription !== 'function') {
+        return res.status(500).json({ error: 'Push subscription is not available' });
+      }
+
+      const saved = await repository.upsertPushSubscription({
+        userId: req.user.id,
+        endpoint: body.subscription.endpoint,
+        p256dh: body.subscription.keys.p256dh,
+        auth: body.subscription.keys.auth,
+        city: body.city || '',
+        areaCode: body.areaCode || '',
+        latitude: body.lat ?? null,
+        longitude: body.lon ?? null
+      });
+
+      if (typeof repository.setUserPushEnabled === 'function') {
+        await repository.setUserPushEnabled({ userId: req.user.id, enabled: true });
+      }
+
+      await sendWebPushToSubscriptions(
+        [
+          {
+            endpoint: body.subscription.endpoint,
+            keys: {
+              p256dh: body.subscription.keys.p256dh,
+              auth: body.subscription.keys.auth
+            }
+          }
+        ],
+        {
+          title: 'KitaabPadho Notifications Enabled',
+          body: 'Push is active for your account. You will receive listing and community alerts.',
+          url: appConfig.appBaseUrl
+        }
+      );
+
+      return res.json({ ok: true, subscription: saved });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/push/unsubscribe', requireAuth, async (req, res) => {
+    try {
+      const endpoint = String(req.body?.endpoint || '').trim();
+      if (!endpoint) return res.status(400).json({ error: 'endpoint is required' });
+      if (typeof repository.deletePushSubscription !== 'function') {
+        return res.status(500).json({ error: 'Push unsubscribe is not available' });
+      }
+      await repository.deletePushSubscription({ userId: req.user.id, endpoint });
+      return res.json({ ok: true });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get('/api/areas', async (_, res) => {
     try {
       const areaRows = typeof repository.listAreaOptions === 'function' ? await repository.listAreaOptions() : [];
@@ -770,7 +949,9 @@ function createApp(deps = {}) {
         details: {
           listingType: listing.listingType,
           category: listing.category,
-          areaCode: listing.areaCode
+          areaCode: listing.areaCode,
+          sellerType: listing.sellerType,
+          deliveryMode: listing.deliveryMode
         }
       });
       if (typeof repository.notifyAllUsersAboutListing === 'function') {
@@ -783,17 +964,59 @@ function createApp(deps = {}) {
           category: listing.category
         });
       }
+      if (typeof repository.listPushSubscriptionsNear === 'function') {
+        const listingSubscriptions = await repository.listPushSubscriptionsNear({
+          lat: listing.latitude,
+          lon: listing.longitude,
+          radiusKm: 250,
+          city: listing.city
+        });
+        await sendWebPushToSubscriptions(listingSubscriptions, {
+          title: 'New arrival in marketplace',
+          body: `${listing.title} | ${listing.city} | ${listing.listingType}`,
+          url: `${appConfig.appBaseUrl}/#marketplace`
+        });
+      }
+
+      let deliveryJob = null;
+      if (listing.deliveryMode === 'peer_to_peer' && typeof repository.createDeliveryJob === 'function') {
+        deliveryJob = await repository.createDeliveryJob({
+          listingId: listing.id,
+          pickupCity: listing.city,
+          pickupAreaCode: listing.areaCode,
+          pickupLatitude: listing.latitude,
+          pickupLongitude: listing.longitude,
+          deliveryMode: listing.deliveryMode,
+          createdBy: req.user.id
+        });
+      }
+
+      if (deliveryJob && typeof repository.listPushSubscriptionsNear === 'function') {
+        const deliverySubscriptions = await repository.listPushSubscriptionsNear({
+          lat: listing.latitude,
+          lon: listing.longitude,
+          radiusKm: 250,
+          city: listing.city
+        });
+        await sendWebPushToSubscriptions(deliverySubscriptions, {
+          title: 'New Delivery Job Nearby',
+          body: `${listing.title} in ${listing.city}. Open Delivery Portal to claim.`,
+          url: `${appConfig.appBaseUrl}/delivery`
+        });
+      }
 
       publishRealtimeEvent('listing.created', {
         id: listing.id,
         title: listing.title,
         city: listing.city,
         listingType: listing.listingType,
-        category: listing.category
+        category: listing.category,
+        sellerType: listing.sellerType
       });
       publishRealtimeEvent('notifications.invalidate', { source: 'listing.create' });
+      if (deliveryJob) publishRealtimeEvent('delivery.updated', { type: 'delivery_job_created', deliveryJobId: deliveryJob.id });
 
-      return res.status(201).json(listing);
+      return res.status(201).json({ ...listing, deliveryJob });
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
       return res.status(500).json({ error: error.message });
@@ -924,9 +1147,25 @@ function createApp(deps = {}) {
         summary: 'Community post created',
         details: { categorySlug: body.categorySlug }
       });
+      await queryFn(
+        `INSERT INTO notifications (user_id, kind, title, body, entity_type, entity_id)
+         SELECT u.id, 'community_post', $2, $3, 'community_post', $1
+         FROM users u
+         WHERE u.id <> $4`,
+        [post.id, `New community topic: ${post.title}`, `${req.user.fullName || 'Member'} posted in community.`, req.user.id]
+      ).catch(() => null);
+      if (typeof repository.listPushSubscriptionsNear === 'function') {
+        const subscriptions = await repository.listPushSubscriptionsNear({ city: '', radiusKm: 250 });
+        await sendWebPushToSubscriptions(subscriptions, {
+          title: 'New community topic',
+          body: `${post.title}`,
+          url: `${appConfig.appBaseUrl}/#community`
+        });
+      }
 
       const fullPost = await repository.getCommunityPostById(post.id);
       publishRealtimeEvent('community.updated', { type: 'post_created', postId: post.id });
+      publishRealtimeEvent('notifications.invalidate', { source: 'community.post_create' });
       return res.status(201).json(fullPost || post);
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
@@ -969,6 +1208,11 @@ function createApp(deps = {}) {
           { source: 'community.comment', postId, actorName: req.user.fullName || '' },
           post.createdBy
         );
+        await pushToUser(post.createdBy, {
+          title: 'New comment on your post',
+          body: `${req.user.fullName || 'A member'} replied in community.`,
+          url: `${appConfig.appBaseUrl}/#community`
+        });
       }
       publishRealtimeEvent('community.updated', { type: 'comment_created', postId, commentId: comment.id });
       return res.status(201).json({ ...comment, authorName: req.user.fullName });
@@ -994,6 +1238,100 @@ function createApp(deps = {}) {
       publishRealtimeEvent('community.updated', { type: 'comment_deleted', commentId });
       return res.json({ ok: true });
     } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/delivery/jobs', async (req, res) => {
+    try {
+      const filters = deliveryJobsQuerySchema.parse(req.query);
+      if (typeof repository.listDeliveryJobs !== 'function') {
+        return res.json({ data: [], meta: { total: 0, limit: filters.limit, offset: filters.offset } });
+      }
+      const data = await repository.listDeliveryJobs(filters);
+      return res.json({
+        data,
+        meta: {
+          total: data.length,
+          limit: filters.limit,
+          offset: filters.offset
+        }
+      });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid query' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/delivery/jobs/:id/claim', requireAuth, async (req, res) => {
+    const jobId = parseId(req.params.id);
+    if (!jobId) return res.status(400).json({ error: 'Invalid delivery job id' });
+    try {
+      if (typeof repository.claimDeliveryJob !== 'function') {
+        return res.status(500).json({ error: 'Delivery claim is not available' });
+      }
+      const job = await repository.claimDeliveryJob({ jobId, userId: req.user.id });
+      if (!job) return res.status(404).json({ error: 'Delivery job not found or already claimed' });
+
+      await logProjectAction(req, {
+        actionType: 'delivery.job_claim',
+        entityType: 'delivery_job',
+        entityId: job.id,
+        summary: 'Delivery executive claimed a job',
+        details: { listingId: job.listingId }
+      });
+
+      publishRealtimeEvent('delivery.updated', { type: 'delivery_job_claimed', deliveryJobId: job.id });
+      if (job.createdBy) {
+        await repository.createUserNotification?.({
+          userId: job.createdBy,
+          kind: 'delivery_claimed',
+          title: 'Delivery job claimed',
+          body: `Your delivery request for listing #${job.listingId} was claimed.`,
+          entityType: 'delivery_job',
+          entityId: job.id
+        });
+        publishRealtimeEvent('notifications.invalidate', { source: 'delivery.claim' }, job.createdBy);
+        await pushToUser(job.createdBy, {
+          title: 'Delivery job claimed',
+          body: `Listing #${job.listingId} now has an assigned delivery executive.`,
+          url: `${appConfig.appBaseUrl}/#notificationsPanel`
+        });
+      }
+
+      return res.json({ ok: true, job });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/payments/razorpay/order', requireAuth, async (req, res) => {
+    try {
+      const body = razorpayOrderSchema.parse(req.body);
+      if (!razorpayClient) {
+        return res.status(500).json({ error: 'Razorpay keys are not configured' });
+      }
+      const order = await razorpayClient.orders.create({
+        amount: Math.round(Number(body.amount) * 100),
+        currency: appConfig.payments.currency || 'INR',
+        receipt: body.receipt || `kp-${Date.now()}`
+      });
+
+      await logProjectAction(req, {
+        actionType: 'payment.razorpay_order_create',
+        entityType: 'payment_order',
+        entityId: null,
+        summary: 'Razorpay order created',
+        details: { amount: body.amount, receipt: body.receipt || '' }
+      });
+
+      return res.json({
+        ok: true,
+        order,
+        keyId: appConfig.payments.razorpayKeyId
+      });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
       return res.status(500).json({ error: error.message });
     }
   });
@@ -1306,7 +1644,8 @@ function createApp(deps = {}) {
         summary: 'Admin changed own password'
       });
 
-      return res.json({ ok: true });
+      res.clearCookie(appConfig.sessionCookieName, clearCookieOptions);
+      return res.json({ ok: true, reauthRequired: true });
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
       return res.status(500).json({ error: error.message });
@@ -1344,6 +1683,22 @@ function createApp(deps = {}) {
 
   app.get('/manifest.webmanifest', (_, res) => {
     res.sendFile(path.join(process.cwd(), 'public', 'manifest.webmanifest'));
+  });
+
+  app.get('/admin', (_, res) => {
+    res.sendFile(path.join(process.cwd(), 'public', 'admin.html'));
+  });
+
+  app.get('/seller', (_, res) => {
+    res.sendFile(path.join(process.cwd(), 'public', 'seller.html'));
+  });
+
+  app.get('/delivery', (_, res) => {
+    res.sendFile(path.join(process.cwd(), 'public', 'delivery.html'));
+  });
+
+  app.get('/buyer', (_, res) => {
+    res.sendFile(path.join(process.cwd(), 'public', 'index.html'));
   });
 
   app.get('*', (_, res) => {

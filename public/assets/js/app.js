@@ -1,5 +1,4 @@
 import { initAi } from './ai.js';
-import { initAdmin } from './admin.js';
 import { initAuth } from './auth.js';
 import { initCommunity } from './community.js';
 import { initLocation } from './location.js';
@@ -22,7 +21,7 @@ function wireModalDismiss() {
 
 function boot() {
   let auth;
-  const viewIds = ['marketplace', 'community', 'ai', 'notificationsPanel', 'profilePanel', 'adminPanel'];
+  const viewIds = ['marketplace', 'community', 'ai', 'notificationsPanel', 'profilePanel'];
 
   function syncTabView() {
     const rawTarget = String(window.location.hash || '#marketplace').replace('#', '');
@@ -63,11 +62,6 @@ function boot() {
     openAuthModal: (message) => auth?.openAuthModal(message)
   });
 
-  const admin = initAdmin({
-    state,
-    openAuthModal: (message) => auth?.openAuthModal(message)
-  });
-
   const profile = initProfile({
     state,
     openAuthModal: (message) => auth?.openAuthModal(message),
@@ -95,7 +89,6 @@ function boot() {
       await Promise.all([
         marketplace.refreshListings(),
         community.refreshPosts(),
-        admin.onAuthChanged(),
         profile.onAuthChanged(),
         notifications.onAuthChanged(),
         realtime.onAuthChanged()
@@ -137,7 +130,6 @@ function boot() {
       await Promise.all([
         marketplace.refreshListings(),
         community.refreshPosts(),
-        admin.refresh(),
         profile.refreshUser(),
         notifications.refresh(),
         realtime.onAuthChanged()

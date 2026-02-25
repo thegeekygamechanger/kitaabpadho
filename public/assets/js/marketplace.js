@@ -84,11 +84,13 @@ export function initMarketplace({ state, openAuthModal }) {
           <div class="card-body">
             <div class="card-meta">
               <span class="pill ${listingTypeClass(item.listingType)}">${escapeHtml(item.listingType)}</span>
+              <span class="pill type-buy">${escapeHtml(item.sellerType || 'student')}</span>
               <span class="muted">${escapeHtml(area)}</span>
               ${distanceLabel}
             </div>
             <h3 class="card-title">${escapeHtml(item.title)}</h3>
             <p class="muted">${escapeHtml(item.city)} | ${escapeHtml(item.ownerName || 'Student')}</p>
+            <p class="muted">Delivery: ${escapeHtml(item.deliveryMode || 'peer_to_peer')}</p>
             <div class="card-price">${formatInr(item.price)}</div>
             <p class="muted">${escapeHtml(String(item.description || '').slice(0, 90))}</p>
             <div class="card-actions">
@@ -136,10 +138,19 @@ export function initMarketplace({ state, openAuthModal }) {
         (listing.areaCode || 'other').replaceAll('_', ' ')
       )}</p>
         <p><strong>${formatInr(listing.price)}</strong> | ${escapeHtml(listing.listingType)}</p>
+        <p class="muted">Seller Type: ${escapeHtml(listing.sellerType || 'student')} | Delivery: ${escapeHtml(
+        listing.deliveryMode || 'peer_to_peer'
+      )}</p>
+        <p class="muted">Payments: ${escapeHtml(Array.isArray(listing.paymentModes) ? listing.paymentModes.join(', ') : 'cod')}</p>
         <p>${escapeHtml(listing.description)}</p>
         <p class="muted">Owner: ${escapeHtml(listing.ownerName || 'Student')} ${
         listing.ownerEmail ? `(${escapeHtml(listing.ownerEmail)})` : ''
       }</p>
+        <div class="drawer-actions">
+          <button class="kb-btn kb-btn-primary razorpay-order-btn" data-id="${listing.id}" data-amount="${Number(listing.price || 0)}" type="button">
+            Create Razorpay Order
+          </button>
+        </div>
         <div style="display:flex;flex-wrap:wrap;gap:0.6rem">${mediaHtml}</div>
       `;
       showModal('listingDetailModal');
@@ -164,12 +175,16 @@ export function initMarketplace({ state, openAuthModal }) {
         description: form.description.value.trim(),
         category: form.category.value,
         listingType: form.listingType.value,
+        sellerType: form.sellerType.value,
+        deliveryMode: form.deliveryMode.value,
+        paymentModes: Array.from(form.querySelectorAll('input[name="paymentModes"]:checked')).map((node) => node.value),
         price: Number(form.price.value || 0),
         city: form.city.value.trim(),
         areaCode: form.areaCode.value,
         latitude: Number(form.latitude.value),
         longitude: Number(form.longitude.value)
       };
+      if (!payload.paymentModes.length) payload.paymentModes = ['cod'];
 
       const listing = await api.createListing(payload);
       const files = Array.from(form.media.files || []);
@@ -215,6 +230,24 @@ export function initMarketplace({ state, openAuthModal }) {
     const button = target.closest('.view-listing-btn');
     if (!button) return;
     openListingDetails(button.dataset.id);
+  });
+
+  listingDetailContent?.addEventListener('click', async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const button = target.closest('.razorpay-order-btn');
+    if (!button) return;
+    try {
+      const amount = Number(button.dataset.amount || 0);
+      const listingId = button.dataset.id || '';
+      const result = await api.createRazorpayOrder({
+        amount,
+        receipt: `listing-${listingId}-${Date.now()}`
+      });
+      window.alert(`Razorpay order created: ${result.order?.id || 'N/A'}`);
+    } catch (error) {
+      window.alert(error.message || 'Unable to create Razorpay order');
+    }
   });
 
   closeListingDetailBtn?.addEventListener('click', () => hideModal('listingDetailModal'));

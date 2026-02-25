@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#1f6fe5" />
+    <title>📚 Seller Portal | KitaabPadho</title>
+    <link rel="icon" type="image/svg+xml" href="/assets/icons/bookish.svg" />
+    <link rel="stylesheet" href="/assets/css/app.css" />
+  </head>
+  <body>
+    <header class="kb-header">
+      <div class="kb-topbar">
+        <a class="kb-brand" href="/">
+          <span class="kb-brand-mark">KP</span>
+          <span>
+            <strong>Seller Portal</strong>
+            <small>List stationery and books for buy/rent/sell</small>
+          </span>
+        </a>
+        <div class="drawer-actions" style="justify-content:end">
+          <a class="kb-btn kb-btn-ghost" href="/">Buyer</a>
+          <a class="kb-btn kb-btn-ghost" href="/delivery">Delivery</a>
+          <a class="kb-btn kb-btn-ghost" href="/admin">Admin</a>
+          <button id="sellerLogoutBtn" class="kb-btn kb-btn-dark" type="button">Logout</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="kb-main">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Seller Login</h2>
+          <p id="sellerAuthBadge" class="muted">Guest</p>
+        </div>
+        <form id="sellerLoginForm" class="drawer" style="max-width:460px">
+          <input class="kb-input" name="email" type="email" placeholder="Email" required />
+          <input class="kb-input" name="password" type="password" placeholder="Password" required />
+          <button class="kb-btn kb-btn-primary" type="submit">Login</button>
+        </form>
+        <p id="sellerAuthStatus" class="muted"></p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Post Stationery / Book Listing</h2>
+        </div>
+        <form id="sellerListingForm" class="drawer">
+          <div class="drawer-grid">
+            <input name="title" class="kb-input" placeholder="Title" required />
+            <select name="category" class="kb-select" required>
+              <option value="book">Book</option>
+              <option value="notes">Notes</option>
+              <option value="stationery">Stationery</option>
+              <option value="instrument">Instrument</option>
+              <option value="pdf">PDF</option>
+              <option value="video">Video</option>
+            </select>
+            <select name="listingType" class="kb-select" required>
+              <option value="sell">Sell</option>
+              <option value="rent">Rent</option>
+              <option value="buy">Buy</option>
+            </select>
+            <select name="sellerType" class="kb-select" required>
+              <option value="student">Student</option>
+              <option value="library">Library</option>
+              <option value="reseller">Reseller</option>
+              <option value="wholesaler">Wholesaler</option>
+              <option value="college">College</option>
+              <option value="individual_seller">Individual Seller</option>
+              <option value="shop">Shop</option>
+            </select>
+            <select name="deliveryMode" class="kb-select" required>
+              <option value="peer_to_peer">Peer to Peer</option>
+              <option value="seller_dedicated">Seller Dedicated</option>
+              <option value="kpi_dedicated">KPI Dedicated</option>
+            </select>
+            <input name="price" class="kb-input" type="number" min="0" step="0.01" placeholder="Price" required />
+            <input name="city" class="kb-input" placeholder="City" required />
+            <select name="areaCode" class="kb-select">
+              <option value="other">Other</option>
+              <option value="loni_kalbhor">Loni Kalbhor</option>
+              <option value="hadapsar">Hadapsar</option>
+              <option value="camp">Camp</option>
+            </select>
+            <input name="latitude" class="kb-input" type="number" step="any" placeholder="Latitude" required />
+            <input name="longitude" class="kb-input" type="number" step="any" placeholder="Longitude" required />
+          </div>
+          <div class="payment-modes">
+            <label><input type="checkbox" name="paymentModes" value="cod" checked /> Cash on Delivery</label>
+            <label><input type="checkbox" name="paymentModes" value="upi" /> UPI</label>
+            <label><input type="checkbox" name="paymentModes" value="card" /> Debit/Credit Card</label>
+            <label><input type="checkbox" name="paymentModes" value="razorpay" /> Razorpay</label>
+          </div>
+          <textarea name="description" class="kb-textarea" placeholder="Description" required></textarea>
+          <button class="kb-btn kb-btn-primary" type="submit">Publish Listing</button>
+          <p id="sellerListingStatus" class="muted"></p>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Nearby Marketplace Preview</h2>
+          <button id="sellerRefreshListingsBtn" class="kb-btn kb-btn-ghost" type="button">Refresh</button>
+        </div>
+        <div id="sellerListings" class="cards"></div>
+      </section>
+    </main>
+
+    <footer class="kb-footer">
+      <p>Made by UPSC aspirant. Built for learners across India. KitaabPadhoIndia. @2026 copyright</p>
+    </footer>
+
+    <script type="module" src="/assets/js/seller.js"></script>
+  </body>
+</html>

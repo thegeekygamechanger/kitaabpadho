@@ -10,6 +10,8 @@ export function initAuth({ state, onAuthChanged }) {
   const authStatus = el('authStatus');
   const loginForm = el('loginForm');
   const registerForm = el('registerForm');
+  const signupTotpSetupBtn = el('signupTotpSetupBtn');
+  const signupTotpQr = el('signupTotpQr');
 
   function renderAuth() {
     if (state.user) {
@@ -113,6 +115,7 @@ export function initAuth({ state, onAuthChanged }) {
       const payload = {
         fullName: form.fullName.value.trim(),
         email: form.email.value.trim(),
+        phoneNumber: form.phoneNumber.value.trim() || undefined,
         password: form.password.value
       };
       const totpSecret = form.totpSecret.value.trim().toUpperCase();
@@ -123,8 +126,34 @@ export function initAuth({ state, onAuthChanged }) {
       }
       await register(payload);
       form.reset();
+      if (signupTotpQr) {
+        signupTotpQr.src = '';
+        signupTotpQr.classList.add('hidden');
+      }
     } catch (error) {
       setText('authStatus', error.message || 'Signup failed');
+    }
+  });
+
+  signupTotpSetupBtn?.addEventListener('click', async () => {
+    if (!registerForm) return;
+    const fullName = registerForm.fullName.value.trim();
+    const email = registerForm.email.value.trim();
+    if (!fullName || !email) {
+      setText('authStatus', 'Enter full name and email first.');
+      return;
+    }
+    setText('authStatus', 'Generating TOTP QR...');
+    try {
+      const result = await api.signupTotpSetup({ fullName, email });
+      if (registerForm.totpSecret) registerForm.totpSecret.value = result.secret || '';
+      if (signupTotpQr) {
+        signupTotpQr.src = result.qrDataUrl || '';
+        signupTotpQr.classList.toggle('hidden', !result.qrDataUrl);
+      }
+      setText('authStatus', 'Scan QR using authenticator app, then enter TOTP code and submit signup.');
+    } catch (error) {
+      setText('authStatus', error.message || 'Unable to generate TOTP QR');
     }
   });
 

@@ -473,6 +473,45 @@ body {
   font-weight: 600;
 }
 
+.payment-modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+.payment-modes label {
+  border: 1px solid #cfe0ff;
+  border-radius: 10px;
+  padding: 0.45rem 0.55rem;
+  background: #f2f7ff;
+  color: #214f97;
+  font-size: 0.88rem;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.5rem 0.2rem;
+}
+
+.toggle-row input[type='checkbox'] {
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.signup-qr {
+  width: 170px;
+  height: 170px;
+  border: 1px solid #d1e0ff;
+  border-radius: 10px;
+  background: #fff;
+  padding: 0.3rem;
+  justify-self: start;
+}
+
 .ai-form {
   display: grid;
   gap: 0.55rem;
@@ -491,7 +530,10 @@ body {
 .kb-footer {
   text-align: center;
   color: #536686;
-  padding: 0.8rem 0 1.4rem;
+  padding: 1.1rem 0 1.6rem;
+  font-weight: 600;
+  border-top: 1px solid #d8e4ff;
+  background: #eef4ff;
 }
 
 .modal {
@@ -742,6 +784,10 @@ body {
   }
 
   .cards {
+    grid-template-columns: 1fr;
+  }
+
+  .payment-modes {
     grid-template-columns: 1fr;
   }
 

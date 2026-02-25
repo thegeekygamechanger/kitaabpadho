@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0d4cb1" />
+    <title>📚 Delivery Executive Portal | KitaabPadho</title>
+    <link rel="icon" type="image/svg+xml" href="/assets/icons/bookish.svg" />
+    <link rel="stylesheet" href="/assets/css/app.css" />
+  </head>
+  <body>
+    <header class="kb-header">
+      <div class="kb-topbar">
+        <a class="kb-brand" href="/">
+          <span class="kb-brand-mark">KP</span>
+          <span>
+            <strong>Delivery Executive Portal</strong>
+            <small>Peer-to-peer jobs nearby like rapido flow</small>
+          </span>
+        </a>
+        <div class="drawer-actions" style="justify-content:end">
+          <a class="kb-btn kb-btn-ghost" href="/">Buyer</a>
+          <a class="kb-btn kb-btn-ghost" href="/seller">Seller</a>
+          <a class="kb-btn kb-btn-ghost" href="/admin">Admin</a>
+          <button id="deliveryLogoutBtn" class="kb-btn kb-btn-dark" type="button">Logout</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="kb-main">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Delivery Login</h2>
+          <p id="deliveryAuthBadge" class="muted">Guest</p>
+        </div>
+        <form id="deliveryLoginForm" class="drawer" style="max-width:460px">
+          <input class="kb-input" name="email" type="email" placeholder="Email" required />
+          <input class="kb-input" name="password" type="password" placeholder="Password" required />
+          <button class="kb-btn kb-btn-primary" type="submit">Login</button>
+        </form>
+        <div class="drawer-actions">
+          <button id="detectDeliveryGpsBtn" class="kb-btn kb-btn-ghost" type="button">Use GPS</button>
+          <button id="deliveryRefreshBtn" class="kb-btn kb-btn-dark" type="button">Refresh Jobs</button>
+        </div>
+        <p id="deliveryStatus" class="muted">Enable GPS to get nearby delivery jobs up to 250 km.</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Open Delivery Jobs</h2>
+        </div>
+        <div id="deliveryJobs" class="cards"></div>
+      </section>
+    </main>
+
+    <footer class="kb-footer">
+      <p>Made by UPSC aspirant. Built for learners across India. KitaabPadhoIndia. @2026 copyright</p>
+    </footer>
+
+    <script type="module" src="/assets/js/delivery.js"></script>
+  </body>
+</html>

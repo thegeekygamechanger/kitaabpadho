@@ -26,5 +26,19 @@ module.exports = {
     primaryProvider: process.env.AI_PRIMARY_PROVIDER || 'auto',
     timeoutMs: Number(process.env.AI_TIMEOUT_MS || 20000),
     groqBaseUrl: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1'
+  },
+  push: {
+    vapidPublicKey:
+      process.env.VAPID_PUBLIC_KEY ||
+      'BPgXE2f8tT3LSJosRbIXRoWwiBQ738xZBayx_LbYQ0EVkDUJPWdBL6oC0X-AbRVsGTh4zeLgocMMrvLh2r2K1Fs',
+    vapidPrivateKey:
+      process.env.VAPID_PRIVATE_KEY ||
+      'INPlk2uJtJM9fozQ7fth7LXkDUdvmJDwMlU4l26iTU8',
+    subject: process.env.VAPID_SUBJECT || 'mailto:admin@kitaabpadho.in'
+  },
+  payments: {
+    razorpayKeyId: process.env.RAZORPAY_KEY_ID || '',
+    razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || '',
+    currency: process.env.RAZORPAY_CURRENCY || 'INR'
   }
 };

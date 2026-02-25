@@ -12,8 +12,10 @@ function createRepository(queryFn) {
           id,
           email,
           full_name AS "fullName",
+          phone_number AS "phoneNumber",
           password_hash AS "passwordHash",
           role,
+          push_enabled AS "pushEnabled",
           totp_enabled AS "totpEnabled",
           totp_secret AS "totpSecret",
           totp_pending_secret AS "totpPendingSecret"
@@ -31,12 +33,32 @@ function createRepository(queryFn) {
           id,
           email,
           full_name AS "fullName",
+          phone_number AS "phoneNumber",
           role,
+          push_enabled AS "pushEnabled",
           totp_enabled AS "totpEnabled"
          FROM users
          WHERE id = $1
          LIMIT 1`,
         [id]
+      );
+      return result.rows[0] || null;
+    },
+
+    async findUserByFullName(fullName) {
+      const result = await run(
+        `SELECT
+          id,
+          email,
+          full_name AS "fullName",
+          phone_number AS "phoneNumber",
+          role,
+          push_enabled AS "pushEnabled",
+          totp_enabled AS "totpEnabled"
+         FROM users
+         WHERE lower(full_name) = lower($1)
+         LIMIT 1`,
+        [fullName]
       );
       return result.rows[0] || null;
     },
@@ -47,8 +69,10 @@ function createRepository(queryFn) {
           id,
           email,
           full_name AS "fullName",
+          phone_number AS "phoneNumber",
           password_hash AS "passwordHash",
           role,
+          push_enabled AS "pushEnabled",
           totp_enabled AS "totpEnabled",
           totp_secret AS "totpSecret",
           totp_pending_secret AS "totpPendingSecret"
@@ -60,23 +84,38 @@ function createRepository(queryFn) {
       return result.rows[0] || null;
     },
 
-    async createUser({ email, fullName, passwordHash }) {
+    async createUser({ email, fullName, phoneNumber = '', passwordHash }) {
       const result = await run(
-        `INSERT INTO users (email, full_name, password_hash, role)
-         VALUES ($1, $2, $3, 'student')
-         RETURNING id, email, full_name AS "fullName", role, totp_enabled AS "totpEnabled"`,
-        [email, fullName, passwordHash]
+        `INSERT INTO users (email, full_name, phone_number, password_hash, role)
+         VALUES ($1, $2, $3, $4, 'student')
+         RETURNING
+          id,
+          email,
+          full_name AS "fullName",
+          phone_number AS "phoneNumber",
+          role,
+          push_enabled AS "pushEnabled",
+          totp_enabled AS "totpEnabled"`,
+        [email, fullName, phoneNumber || null, passwordHash]
       );
       return result.rows[0];
     },
 
-    async updateUserProfile({ userId, fullName }) {
+    async updateUserProfile({ userId, fullName, phoneNumber = '' }) {
       const result = await run(
         `UPDATE users
-         SET full_name = $2
+         SET full_name = $2,
+             phone_number = $3
          WHERE id = $1
-         RETURNING id, email, full_name AS "fullName", role, totp_enabled AS "totpEnabled"`,
-        [userId, fullName]
+         RETURNING
+          id,
+          email,
+          full_name AS "fullName",
+          phone_number AS "phoneNumber",
+          role,
+          push_enabled AS "pushEnabled",
+          totp_enabled AS "totpEnabled"`,
+        [userId, fullName, phoneNumber || null]
       );
       return result.rows[0] || null;
     },
@@ -92,12 +131,38 @@ function createRepository(queryFn) {
       return result.rows[0] || null;
     },
 
+    async setUserPushEnabled({ userId, enabled }) {
+      const result = await run(
+        `UPDATE users
+         SET push_enabled = $2
+         WHERE id = $1
+         RETURNING
+          id,
+          email,
+          full_name AS "fullName",
+          phone_number AS "phoneNumber",
+          role,
+          push_enabled AS "pushEnabled",
+          totp_enabled AS "totpEnabled"`,
+        [userId, Boolean(enabled)]
+      );
+      return result.rows[0] || null;
+    },
+
     async setTotpPendingSecret({ userId, pendingSecret }) {
       const result = await run(
         `UPDATE users
          SET totp_pending_secret = $2
          WHERE id = $1
-         RETURNING id, email, full_name AS "fullName", totp_pending_secret AS "totpPendingSecret", totp_enabled AS "totpEnabled"`,
+         RETURNING
+          id,
+          email,
+          full_name AS "fullName",
+          phone_number AS "phoneNumber",
+          role,
+          push_enabled AS "pushEnabled",
+          totp_pending_secret AS "totpPendingSecret",
+          totp_enabled AS "totpEnabled"`,
         [userId, pendingSecret]
       );
       return result.rows[0] || null;
@@ -110,7 +175,14 @@ function createRepository(queryFn) {
              totp_secret = $2,
              totp_pending_secret = NULL
          WHERE id = $1
-         RETURNING id, email, full_name AS "fullName", role, totp_enabled AS "totpEnabled"`,
+         RETURNING
+          id,
+          email,
+          full_name AS "fullName",
+          phone_number AS "phoneNumber",
+          role,
+          push_enabled AS "pushEnabled",
+          totp_enabled AS "totpEnabled"`,
         [userId, secret]
       );
       return result.rows[0] || null;
@@ -123,7 +195,14 @@ function createRepository(queryFn) {
              totp_secret = NULL,
              totp_pending_secret = NULL
          WHERE id = $1
-         RETURNING id, email, full_name AS "fullName", role, totp_enabled AS "totpEnabled"`,
+         RETURNING
+          id,
+          email,
+          full_name AS "fullName",
+          phone_number AS "phoneNumber",
+          role,
+          push_enabled AS "pushEnabled",
+          totp_enabled AS "totpEnabled"`,
         [userId]
       );
       return result.rows[0] || null;
@@ -145,7 +224,9 @@ function createRepository(queryFn) {
           u.id,
           u.email,
           u.full_name AS "fullName",
+          u.phone_number AS "phoneNumber",
           u.role,
+          u.push_enabled AS "pushEnabled",
           u.totp_enabled AS "totpEnabled",
           u.created_at AS "createdAt"
          FROM users u
@@ -174,7 +255,14 @@ function createRepository(queryFn) {
         `UPDATE users
          SET password_hash = $2
          WHERE lower(email) = lower($1)
-         RETURNING id, email, full_name AS "fullName", role, totp_enabled AS "totpEnabled"`,
+         RETURNING
+          id,
+          email,
+          full_name AS "fullName",
+          phone_number AS "phoneNumber",
+          role,
+          push_enabled AS "pushEnabled",
+          totp_enabled AS "totpEnabled"`,
         [email, passwordHash]
       );
       return result.rows[0] || null;
@@ -582,6 +670,10 @@ function createRepository(queryFn) {
         values.push(filters.listingType);
         where.push(`l.listing_type = $${values.length}`);
       }
+      if (filters.sellerType) {
+        values.push(filters.sellerType);
+        where.push(`l.seller_type = $${values.length}`);
+      }
       if (filters.city) {
         values.push(`%${filters.city}%`);
         where.push(`l.city ILIKE $${values.length}`);
@@ -609,6 +701,9 @@ function createRepository(queryFn) {
           l.description,
           l.category,
           l.listing_type AS "listingType",
+          l.seller_type AS "sellerType",
+          l.delivery_mode AS "deliveryMode",
+          l.payment_modes AS "paymentModes",
           l.price,
           l.city,
           l.area_code AS "areaCode",
@@ -678,6 +773,10 @@ function createRepository(queryFn) {
         values.push(filters.listingType);
         where.push(`listing_type = $${values.length}`);
       }
+      if (filters.sellerType) {
+        values.push(filters.sellerType);
+        where.push(`seller_type = $${values.length}`);
+      }
       if (filters.city) {
         values.push(`%${filters.city}%`);
         where.push(`city ILIKE $${values.length}`);
@@ -692,15 +791,42 @@ function createRepository(queryFn) {
       return result.rows[0]?.total || 0;
     },
 
-    async createListing({ title, description, category, listingType, price, city, areaCode, latitude, longitude, createdBy }) {
+    async createListing({
+      title,
+      description,
+      category,
+      listingType,
+      sellerType = 'student',
+      deliveryMode = 'peer_to_peer',
+      paymentModes = ['cod'],
+      price,
+      city,
+      areaCode,
+      latitude,
+      longitude,
+      createdBy
+    }) {
       const result = await run(
         `INSERT INTO listings
-          (title, description, category, listing_type, price, city, area_code, latitude, longitude, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+          (title, description, category, listing_type, seller_type, delivery_mode, payment_modes, price, city, area_code, latitude, longitude, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
          RETURNING
-          id, title, description, category, listing_type AS "listingType", price, city,
-          area_code AS "areaCode", latitude, longitude, created_by AS "createdBy", created_at AS "createdAt"`,
-        [title, description, category, listingType, price, city, areaCode, latitude, longitude, createdBy]
+          id,
+          title,
+          description,
+          category,
+          listing_type AS "listingType",
+          seller_type AS "sellerType",
+          delivery_mode AS "deliveryMode",
+          payment_modes AS "paymentModes",
+          price,
+          city,
+          area_code AS "areaCode",
+          latitude,
+          longitude,
+          created_by AS "createdBy",
+          created_at AS "createdAt"`,
+        [title, description, category, listingType, sellerType, deliveryMode, paymentModes, price, city, areaCode, latitude, longitude, createdBy]
       );
       return result.rows[0];
     },
@@ -731,6 +857,9 @@ function createRepository(queryFn) {
           l.description,
           l.category,
           l.listing_type AS "listingType",
+          l.seller_type AS "sellerType",
+          l.delivery_mode AS "deliveryMode",
+          l.payment_modes AS "paymentModes",
           l.price,
           l.city,
           l.area_code AS "areaCode",
@@ -1010,6 +1139,229 @@ function createRepository(queryFn) {
         [userId]
       );
       return result.rowCount || 0;
+    },
+
+    async upsertPushSubscription({ userId, endpoint, p256dh, auth, city = '', areaCode = '', latitude = null, longitude = null }) {
+      const result = await run(
+        `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, city, area_code, latitude, longitude, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())
+         ON CONFLICT (endpoint) DO UPDATE SET
+          user_id = EXCLUDED.user_id,
+          p256dh = EXCLUDED.p256dh,
+          auth = EXCLUDED.auth,
+          city = EXCLUDED.city,
+          area_code = EXCLUDED.area_code,
+          latitude = EXCLUDED.latitude,
+          longitude = EXCLUDED.longitude,
+          updated_at = NOW()
+         RETURNING
+          id,
+          user_id AS "userId",
+          endpoint,
+          p256dh,
+          auth,
+          city,
+          area_code AS "areaCode",
+          latitude,
+          longitude,
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"`,
+        [userId, endpoint, p256dh, auth, city || '', areaCode || '', latitude, longitude]
+      );
+      return result.rows[0] || null;
+    },
+
+    async deletePushSubscription({ userId, endpoint }) {
+      const result = await run(
+        `DELETE FROM push_subscriptions
+         WHERE user_id = $1 AND endpoint = $2
+         RETURNING id`,
+        [userId, endpoint]
+      );
+      return result.rows[0] || null;
+    },
+
+    async listPushSubscriptionsByUser({ userId }) {
+      const result = await run(
+        `SELECT endpoint, p256dh, auth
+         FROM push_subscriptions
+         WHERE user_id = $1`,
+        [userId]
+      );
+      return result.rows.map((item) => ({
+        endpoint: item.endpoint,
+        keys: {
+          p256dh: item.p256dh,
+          auth: item.auth
+        }
+      }));
+    },
+
+    async listPushSubscriptionsNear({ lat = null, lon = null, radiusKm = 250, city = '' } = {}) {
+      const hasCoords = typeof lat === 'number' && typeof lon === 'number';
+      if (hasCoords) {
+        const result = await run(
+          `SELECT
+            ps.endpoint,
+            ps.p256dh,
+            ps.auth,
+            (6371 * acos(least(1, greatest(-1,
+              cos(radians($1)) * cos(radians(ps.latitude)) *
+              cos(radians(ps.longitude) - radians($2)) +
+              sin(radians($1)) * sin(radians(ps.latitude))
+            )))) AS "distanceKm"
+           FROM push_subscriptions ps
+           INNER JOIN users u ON u.id = ps.user_id
+           WHERE u.push_enabled = TRUE
+             AND ps.latitude IS NOT NULL
+             AND ps.longitude IS NOT NULL
+             AND (6371 * acos(least(1, greatest(-1,
+               cos(radians($1)) * cos(radians(ps.latitude)) *
+               cos(radians(ps.longitude) - radians($2)) +
+               sin(radians($1)) * sin(radians(ps.latitude))
+             )))) <= $3
+           ORDER BY "distanceKm" ASC`,
+          [lat, lon, radiusKm]
+        );
+        return result.rows.map((item) => ({
+          endpoint: item.endpoint,
+          keys: { p256dh: item.p256dh, auth: item.auth }
+        }));
+      }
+
+      const values = [];
+      let whereSql = '';
+      if (city) {
+        values.push(`%${city}%`);
+        whereSql = `AND ps.city ILIKE $1`;
+      }
+      const result = await run(
+        `SELECT ps.endpoint, ps.p256dh, ps.auth
+         FROM push_subscriptions ps
+         INNER JOIN users u ON u.id = ps.user_id
+         WHERE u.push_enabled = TRUE
+         ${whereSql}`,
+        values
+      );
+      return result.rows.map((item) => ({
+        endpoint: item.endpoint,
+        keys: { p256dh: item.p256dh, auth: item.auth }
+      }));
+    },
+
+    async createDeliveryJob({ listingId, pickupCity, pickupAreaCode = 'other', pickupLatitude = null, pickupLongitude = null, deliveryMode, createdBy }) {
+      const result = await run(
+        `INSERT INTO delivery_jobs
+          (listing_id, pickup_city, pickup_area_code, pickup_latitude, pickup_longitude, delivery_mode, created_by, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'open')
+         RETURNING
+          id,
+          listing_id AS "listingId",
+          pickup_city AS "pickupCity",
+          pickup_area_code AS "pickupAreaCode",
+          pickup_latitude AS "pickupLatitude",
+          pickup_longitude AS "pickupLongitude",
+          delivery_mode AS "deliveryMode",
+          status,
+          created_by AS "createdBy",
+          claimed_by AS "claimedBy",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"`,
+        [listingId, pickupCity, pickupAreaCode, pickupLatitude, pickupLongitude, deliveryMode, createdBy]
+      );
+      return result.rows[0] || null;
+    },
+
+    async listDeliveryJobs({ lat = null, lon = null, radiusKm = 250, city = '', areaCode = '', status = 'open', limit = 25, offset = 0 }) {
+      const values = [];
+      const where = [];
+      let distanceSql = 'NULL::double precision';
+      const hasCoords = typeof lat === 'number' && typeof lon === 'number';
+
+      if (status) {
+        values.push(status);
+        where.push(`dj.status = $${values.length}`);
+      }
+      if (city) {
+        values.push(`%${city}%`);
+        where.push(`dj.pickup_city ILIKE $${values.length}`);
+      }
+      if (areaCode) {
+        values.push(areaCode);
+        where.push(`dj.pickup_area_code = $${values.length}`);
+      }
+      if (hasCoords) {
+        values.push(lat, lon);
+        const latParam = values.length - 1;
+        const lonParam = values.length;
+        distanceSql = `(6371 * acos(least(1, greatest(-1,
+          cos(radians($${latParam})) * cos(radians(dj.pickup_latitude)) *
+          cos(radians(dj.pickup_longitude) - radians($${lonParam})) +
+          sin(radians($${latParam})) * sin(radians(dj.pickup_latitude))
+        ))))`;
+        values.push(radiusKm);
+        where.push(`dj.pickup_latitude IS NOT NULL AND dj.pickup_longitude IS NOT NULL AND ${distanceSql} <= $${values.length}`);
+      }
+
+      const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      values.push(limit, offset);
+      const limitParam = values.length - 1;
+      const offsetParam = values.length;
+      const orderSql = hasCoords ? `${distanceSql} ASC NULLS LAST, dj.created_at DESC` : 'dj.created_at DESC';
+
+      const result = await run(
+        `SELECT
+          dj.id,
+          dj.listing_id AS "listingId",
+          dj.pickup_city AS "pickupCity",
+          dj.pickup_area_code AS "pickupAreaCode",
+          dj.pickup_latitude AS "pickupLatitude",
+          dj.pickup_longitude AS "pickupLongitude",
+          dj.delivery_mode AS "deliveryMode",
+          dj.status,
+          dj.created_by AS "createdBy",
+          dj.claimed_by AS "claimedBy",
+          dj.created_at AS "createdAt",
+          dj.updated_at AS "updatedAt",
+          l.title AS "listingTitle",
+          l.price AS "listingPrice",
+          l.listing_type AS "listingType",
+          l.seller_type AS "sellerType",
+          ${distanceSql} AS "distanceKm"
+         FROM delivery_jobs dj
+         INNER JOIN listings l ON l.id = dj.listing_id
+         ${whereSql}
+         ORDER BY ${orderSql}
+         LIMIT $${limitParam}
+         OFFSET $${offsetParam}`,
+        values
+      );
+      return result.rows;
+    },
+
+    async claimDeliveryJob({ jobId, userId }) {
+      const result = await run(
+        `UPDATE delivery_jobs
+         SET status = 'claimed',
+             claimed_by = $2,
+             updated_at = NOW()
+         WHERE id = $1 AND status = 'open'
+         RETURNING
+          id,
+          listing_id AS "listingId",
+          pickup_city AS "pickupCity",
+          pickup_area_code AS "pickupAreaCode",
+          pickup_latitude AS "pickupLatitude",
+          pickup_longitude AS "pickupLongitude",
+          delivery_mode AS "deliveryMode",
+          status,
+          created_by AS "createdBy",
+          claimed_by AS "claimedBy",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt"`,
+        [jobId, userId]
+      );
+      return result.rows[0] || null;
     },
 
     async deleteCommunityComment(commentId, userId) {

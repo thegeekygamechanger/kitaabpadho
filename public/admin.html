@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#163f86" />
+    <title>📚 KitaabPadho Admin</title>
+    <link rel="icon" type="image/svg+xml" href="/assets/icons/bookish.svg" />
+    <link rel="stylesheet" href="/assets/css/app.css" />
+  </head>
+  <body>
+    <header class="kb-header">
+      <div class="kb-topbar">
+        <a class="kb-brand" href="/">
+          <span class="kb-brand-mark">KP</span>
+          <span>
+            <strong>KitaabPadho Admin</strong>
+            <small>Project actions and controls</small>
+          </span>
+        </a>
+        <div class="drawer-actions" style="justify-content:end">
+          <a class="kb-btn kb-btn-ghost" href="/">Client</a>
+          <a class="kb-btn kb-btn-ghost" href="/seller">Seller</a>
+          <a class="kb-btn kb-btn-ghost" href="/delivery">Delivery</a>
+          <button id="adminLogoutBtn" class="kb-btn kb-btn-dark" type="button">Logout</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="kb-main">
+      <section id="adminLoginPanel" class="panel">
+        <div class="panel-head">
+          <h2>Admin Login</h2>
+        </div>
+        <form id="adminLoginForm" class="drawer" style="max-width:420px">
+          <input class="kb-input" name="email" type="email" placeholder="Admin email" required />
+          <input class="kb-input" name="password" type="password" placeholder="Password" required />
+          <button class="kb-btn kb-btn-primary" type="submit">Login as Admin</button>
+        </form>
+        <p id="adminLoginStatus" class="muted"></p>
+      </section>
+
+      <section id="adminMainPanel" class="panel hidden">
+        <div class="panel-head">
+          <h2>Admin Panel</h2>
+          <button id="adminRefreshBtn" class="kb-btn kb-btn-ghost" type="button">Refresh</button>
+        </div>
+        <p id="adminStatus" class="muted">Loading admin data...</p>
+        <div id="adminSummary" class="admin-summary"></div>
+        <div class="filter-grid admin-filter-grid">
+          <input id="adminSearchInput" class="kb-input" placeholder="Search summary/email" />
+          <input id="adminActionTypeFilter" class="kb-input" placeholder="Action type" />
+          <input id="adminEntityTypeFilter" class="kb-input" placeholder="Entity type" />
+          <button id="adminApplyFiltersBtn" class="kb-btn kb-btn-dark" type="button">Apply</button>
+        </div>
+        <div id="adminActionsList" class="admin-actions"></div>
+      </section>
+    </main>
+
+    <footer class="kb-footer">
+      <p>Made by UPSC aspirant. Built for learners across India. KitaabPadhoIndia. @2026 copyright</p>
+    </footer>
+
+    <script type="module" src="/assets/js/admin-page.js"></script>
+  </body>
+</html>

@@ -37,6 +37,10 @@ export function initRealtime({ state, marketplace, community, notifications }) {
       debounceRefresh('notifications', () => notifications.refresh());
     });
 
+    nextSource.addEventListener('delivery.updated', () => {
+      debounceRefresh('notifications', () => notifications.refresh());
+    });
+
     nextSource.addEventListener('notifications.invalidate', (event) => {
       const payload = safeJsonParse(event.data || '{}');
       debounceRefresh('notifications', () => notifications.refresh(), 120);
