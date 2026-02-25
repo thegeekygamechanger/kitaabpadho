@@ -2672,6 +2672,45 @@ function createApp(deps = {}) {
   app.get('/api/delivery/jobs', async (req, res) => {
     try {
       const filters = deliveryJobsQuerySchema.parse(req.query);
+      const normalizedStatus = String(filters.status || 'open').toLowerCase();
+      const shouldReconcileOpenJobs = !['completed', 'cancelled', 'rejected', 'delivered'].includes(normalizedStatus);
+      if (
+        shouldReconcileOpenJobs &&
+        typeof repository.listOrdersRequiringDeliveryJobs === 'function' &&
+        typeof repository.ensureDeliveryJobForOrder === 'function'
+      ) {
+        const candidates = await repository.listOrdersRequiringDeliveryJobs({ limit: 200 }).catch(() => []);
+        for (const order of candidates) {
+          const normalizedDeliveryMode = String(order.deliveryMode || '').toLowerCase() || 'peer_to_peer';
+          const reconciledJob = await repository
+            .ensureDeliveryJobForOrder({
+              orderId: order.id,
+              listingId: order.listingId,
+              pickupCity: order.listingCity || '',
+              pickupAreaCode: order.listingAreaCode || '',
+              pickupLatitude:
+                typeof order.listingLatitude === 'number' ? Number(order.listingLatitude) : null,
+              pickupLongitude:
+                typeof order.listingLongitude === 'number' ? Number(order.listingLongitude) : null,
+              deliveryMode: normalizedDeliveryMode,
+              createdBy: order.sellerId || null
+            })
+            .catch(() => null);
+          if (
+            reconciledJob?.created &&
+            Number.isFinite(Number(order.deliveryPartnerId)) &&
+            Number(order.deliveryPartnerId) > 0 &&
+            typeof repository.claimDeliveryJob === 'function'
+          ) {
+            await repository
+              .claimDeliveryJob({
+                jobId: reconciledJob.id,
+                userId: Number(order.deliveryPartnerId)
+              })
+              .catch(() => null);
+          }
+        }
+      }
       if (typeof repository.listDeliveryJobs !== 'function') {
         return res.json({ data: [], meta: { total: 0, limit: filters.limit, offset: filters.offset } });
       }

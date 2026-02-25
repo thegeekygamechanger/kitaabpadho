@@ -2069,6 +2069,29 @@ function createRepository(queryFn) {
       return { ...created, created: true };
     },
 
+    async listOrdersRequiringDeliveryJobs({ limit = 200 } = {}) {
+      const result = await run(
+        `SELECT
+          mo.id,
+          mo.listing_id AS "listingId",
+          mo.seller_id AS "sellerId",
+          mo.delivery_mode AS "deliveryMode",
+          mo.delivery_partner_id AS "deliveryPartnerId",
+          mo.status,
+          l.city AS "listingCity",
+          l.area_code AS "listingAreaCode",
+          l.latitude AS "listingLatitude",
+          l.longitude AS "listingLongitude"
+         FROM marketplace_orders mo
+         INNER JOIN listings l ON l.id = mo.listing_id
+         WHERE mo.status IN ('shipping', 'out_for_delivery')
+         ORDER BY mo.updated_at DESC
+         LIMIT $1`,
+        [limit]
+      );
+      return result.rows || [];
+    },
+
     async cancelActiveDeliveryJobsForOrder(orderId) {
       const result = await run(
         `UPDATE delivery_jobs
