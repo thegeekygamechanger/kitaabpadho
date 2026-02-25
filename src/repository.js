@@ -2077,6 +2077,7 @@ function createRepository(queryFn) {
           mo.seller_id AS "sellerId",
           mo.delivery_mode AS "deliveryMode",
           mo.delivery_partner_id AS "deliveryPartnerId",
+          dp.role AS "deliveryPartnerRole",
           mo.status,
           l.city AS "listingCity",
           l.area_code AS "listingAreaCode",
@@ -2084,12 +2085,78 @@ function createRepository(queryFn) {
           l.longitude AS "listingLongitude"
          FROM marketplace_orders mo
          INNER JOIN listings l ON l.id = mo.listing_id
+         LEFT JOIN users dp ON dp.id = mo.delivery_partner_id
          WHERE mo.status IN ('shipping', 'out_for_delivery')
          ORDER BY mo.updated_at DESC
          LIMIT $1`,
         [limit]
       );
       return result.rows || [];
+    },
+
+    async releaseInvalidDeliveryAssignments({ limit = 300 } = {}) {
+      const normalizedLimit = Number.isFinite(Number(limit))
+        ? Math.max(1, Math.min(1000, Math.trunc(Number(limit))))
+        : 300;
+
+      const orderFixResult = await run(
+        `UPDATE marketplace_orders mo
+         SET
+          delivery_partner_id = NULL,
+          updated_at = NOW()
+         WHERE mo.id IN (
+          SELECT mo2.id
+          FROM marketplace_orders mo2
+          WHERE mo2.status IN ('shipping', 'out_for_delivery')
+            AND mo2.delivery_partner_id IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1
+              FROM users u
+              WHERE u.id = mo2.delivery_partner_id
+                AND lower(u.role) IN ('delivery', 'admin')
+            )
+          ORDER BY mo2.updated_at DESC
+          LIMIT $1
+         )
+         RETURNING
+          mo.id,
+          mo.listing_id AS "listingId",
+          mo.status`,
+        [normalizedLimit]
+      );
+
+      const jobFixResult = await run(
+        `UPDATE delivery_jobs dj
+         SET
+          status = 'open',
+          claimed_by = NULL,
+          updated_at = NOW()
+         WHERE dj.id IN (
+          SELECT dj2.id
+          FROM delivery_jobs dj2
+          WHERE dj2.claimed_by IS NOT NULL
+            AND dj2.status IN ('claimed', 'picked', 'in_transit', 'on_the_way')
+            AND NOT EXISTS (
+              SELECT 1
+              FROM users u
+              WHERE u.id = dj2.claimed_by
+                AND lower(u.role) IN ('delivery', 'admin')
+            )
+          ORDER BY dj2.updated_at DESC
+          LIMIT $1
+         )
+         RETURNING
+          dj.id,
+          dj.order_id AS "orderId",
+          dj.listing_id AS "listingId",
+          dj.status`,
+        [normalizedLimit]
+      );
+
+      return {
+        orders: orderFixResult.rows || [],
+        jobs: jobFixResult.rows || []
+      };
     },
 
     async cancelActiveDeliveryJobsForOrder(orderId) {
@@ -2579,7 +2646,7 @@ function createRepository(queryFn) {
       const values = [Boolean(isAdmin), deliveryUserId];
       const where = [
         `(mo.delivery_mode = 'peer_to_peer' OR mo.status IN ('shipping','out_for_delivery'))`,
-        `($1::boolean OR EXISTS (
+        `($1::boolean OR mo.delivery_partner_id = $2 OR EXISTS (
           SELECT 1
           FROM delivery_jobs dj
           WHERE dj.claimed_by = $2
@@ -2665,6 +2732,11 @@ function createRepository(queryFn) {
     async canDeliveryUserManageOrder({ orderId = null, listingId, userId }) {
       const result = await run(
         `SELECT EXISTS(
+          SELECT 1
+          FROM marketplace_orders mo
+          WHERE mo.id = $1
+            AND mo.delivery_partner_id = $3
+        ) OR EXISTS(
           SELECT 1
           FROM delivery_jobs
           WHERE claimed_by = $3

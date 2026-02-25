@@ -966,12 +966,21 @@ function createApp(deps = {}) {
     }
   });
 
-  app.get('/api/feedback/mine', requireAuth, async (req, res) => {
+  app.get('/api/feedback/mine', async (req, res) => {
     try {
-      if (typeof repository.listFeedbackForUser !== 'function') {
-        return res.json({ data: [], meta: { limit: 20, offset: 0 } });
-      }
       const queryFilters = feedbackListQuerySchema.parse(req.query);
+      if (!req.user?.id) {
+        return res.json({
+          data: [],
+          meta: { limit: queryFilters.limit, offset: queryFilters.offset, total: 0 }
+        });
+      }
+      if (typeof repository.listFeedbackForUser !== 'function') {
+        return res.json({
+          data: [],
+          meta: { limit: queryFilters.limit, offset: queryFilters.offset, total: 0 }
+        });
+      }
       const data = await repository.listFeedbackForUser({
         userId: req.user.id,
         limit: queryFilters.limit,
@@ -1902,13 +1911,23 @@ function createApp(deps = {}) {
     }
   });
 
-  app.get('/api/orders/delivery', requireRole(['delivery']), async (req, res) => {
+  app.get('/api/orders/delivery', async (req, res) => {
     try {
       const filters = marketplaceOrdersQuerySchema.parse(req.query);
+      if (!req.user?.id) {
+        return res.json({ data: [], meta: { total: 0, limit: filters.limit, offset: filters.offset } });
+      }
       if (typeof repository.listMarketplaceOrdersForDelivery !== 'function') {
         return res.status(500).json({ error: 'Delivery order list is not available' });
       }
       const { isAdmin } = await resolveActorPermissions(req);
+      const role = String(req.user?.role || '').toLowerCase();
+      if (!isAdmin && role !== 'delivery') {
+        return res.json({ data: [], meta: { total: 0, limit: filters.limit, offset: filters.offset } });
+      }
+      if (typeof repository.releaseInvalidDeliveryAssignments === 'function') {
+        await repository.releaseInvalidDeliveryAssignments({ limit: 300 }).catch(() => null);
+      }
       const data = await repository.listMarketplaceOrdersForDelivery({
         deliveryUserId: req.user.id,
         isAdmin,
@@ -1977,6 +1996,13 @@ function createApp(deps = {}) {
           listingId: existing.listingId,
           userId: req.user.id
         });
+      }
+      if (
+        !isDeliveryActor &&
+        role === 'delivery' &&
+        Number(existing.deliveryPartnerId) === Number(req.user.id)
+      ) {
+        isDeliveryActor = true;
       }
 
       let allowBuyerActor = false;
@@ -2057,6 +2083,28 @@ function createApp(deps = {}) {
           deliveryMode: normalizedDeliveryMode || 'peer_to_peer',
           createdBy: updated.sellerId || req.user.id
         });
+
+        let canAutoAssignOrderPartner = false;
+        if (
+          Number.isFinite(Number(updated.deliveryPartnerId)) &&
+          Number(updated.deliveryPartnerId) > 0 &&
+          typeof repository.findUserById === 'function'
+        ) {
+          const deliveryPartner = await repository.findUserById(Number(updated.deliveryPartnerId)).catch(() => null);
+          const deliveryPartnerRole = String(deliveryPartner?.role || '').toLowerCase();
+          canAutoAssignOrderPartner = deliveryPartnerRole === 'delivery' || deliveryPartnerRole === 'admin';
+        }
+
+        const claimedById = Number(orderDeliveryJob?.claimedBy);
+        const hasClaimedPartner = Number.isFinite(claimedById) && claimedById > 0;
+        if (orderDeliveryJob?.id && !hasClaimedPartner && canAutoAssignOrderPartner && typeof repository.claimDeliveryJob === 'function') {
+          await repository
+            .claimDeliveryJob({
+              jobId: orderDeliveryJob.id,
+              userId: Number(updated.deliveryPartnerId)
+            })
+            .catch(() => null);
+        }
 
         if (orderDeliveryJob?.created) {
           const deliveryRows = await queryFn(
@@ -2672,6 +2720,9 @@ function createApp(deps = {}) {
   app.get('/api/delivery/jobs', async (req, res) => {
     try {
       const filters = deliveryJobsQuerySchema.parse(req.query);
+      if (typeof repository.releaseInvalidDeliveryAssignments === 'function') {
+        await repository.releaseInvalidDeliveryAssignments({ limit: 300 }).catch(() => null);
+      }
       const normalizedStatus = String(filters.status || 'open').toLowerCase();
       const shouldReconcileOpenJobs = !['completed', 'cancelled', 'rejected', 'delivered'].includes(normalizedStatus);
       if (
@@ -2696,8 +2747,14 @@ function createApp(deps = {}) {
               createdBy: order.sellerId || null
             })
             .catch(() => null);
+          const assignedRole = String(order.deliveryPartnerRole || '').toLowerCase();
+          const canAutoAssign = assignedRole === 'delivery' || assignedRole === 'admin';
+          const claimedById = Number(reconciledJob?.claimedBy);
+          const hasClaimedPartner = Number.isFinite(claimedById) && claimedById > 0;
           if (
-            reconciledJob?.created &&
+            reconciledJob?.id &&
+            !hasClaimedPartner &&
+            canAutoAssign &&
             Number.isFinite(Number(order.deliveryPartnerId)) &&
             Number(order.deliveryPartnerId) > 0 &&
             typeof repository.claimDeliveryJob === 'function'
