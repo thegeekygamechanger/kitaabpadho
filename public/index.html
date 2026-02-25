@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#1f6feb" />
+    <title>KitaabPadho | Revamped</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <style>
+      :root { --bg:#0b1220; --card:#131c2f; --text:#eaf1ff; --muted:#a9b8d9; --primary:#1f6feb; }
+      *{box-sizing:border-box} body{margin:0;font-family:system-ui,Segoe UI,Arial;background:linear-gradient(180deg,#0b1220,#111a2f);color:var(--text)}
+      .wrap{max-width:1100px;margin:auto;padding:1rem}
+      .top{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap}
+      .btn{background:var(--primary);color:#fff;border:0;padding:.7rem 1rem;border-radius:.6rem;cursor:pointer}
+      .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem;margin-top:1rem}
+      .card{background:var(--card);border:1px solid #203055;border-radius:1rem;padding:1rem}
+      .muted{color:var(--muted)}
+      input,select,textarea{width:100%;padding:.65rem;background:#0f1728;color:#fff;border:1px solid #2a3e6a;border-radius:.6rem}
+      textarea{min-height:90px}
+      .hero{padding:1rem 0 0}
+      .list{display:grid;gap:.8rem}
+      .pill{display:inline-block;font-size:.75rem;padding:.25rem .5rem;border-radius:999px;background:#243a67}
+      @media (max-width:600px){h1{font-size:1.4rem}}
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="top hero">
+        <div>
+          <h1>KitaabPadho – Buy/Rent in your real geo-location</h1>
+          <p class="muted">Revamped with Express, Neon(Postgres), Cloudflare R2 media, PWA, and PadhAI (Gemini-first, Groq fallback).</p>
+        </div>
+        <button id="installBtn" class="btn" hidden>Install App</button>
+      </section>
+
+      <section class="grid">
+        <article class="card">
+          <h3>Find in your area</h3>
+          <button class="btn" id="geoBtn">Use My Location</button>
+          <p id="geoStatus" class="muted">No location selected yet.</p>
+        </article>
+
+        <article class="card">
+          <h3>Post Buy/Rent listing</h3>
+          <form id="listingForm" class="list">
+            <input name="title" placeholder="Title" required />
+            <textarea name="description" placeholder="Description" required></textarea>
+            <select name="category"><option>book</option><option>instrument</option><option>notes</option><option>video</option><option>pdf</option></select>
+            <select name="listingType"><option>rent</option><option>buy</option></select>
+            <input name="price" type="number" step="0.01" value="0" />
+            <input name="city" placeholder="City" value="Detected" />
+            <input name="latitude" type="number" step="any" placeholder="Latitude" required />
+            <input name="longitude" type="number" step="any" placeholder="Longitude" required />
+            <button class="btn" type="submit">Submit Listing</button>
+          </form>
+          <p id="listingStatus" class="muted"></p>
+        </article>
+
+        <article class="card">
+          <h3>PadhAI</h3>
+          <p class="muted">Gemini is primary and Groq auto-fallback is enabled.</p>
+          <form id="aiForm" class="list">
+            <textarea name="prompt" placeholder="Ask anything about studies, rentals, or guidance" required></textarea>
+            <button class="btn" type="submit">Ask AI</button>
+          </form>
+          <p id="aiStatus" class="muted"></p>
+          <div id="aiAnswer"></div>
+        </article>
+      </section>
+
+      <section class="card" style="margin-top:1rem">
+        <h3>Live Listings</h3>
+        <div id="listings" class="list"></div>
+      </section>
+    </main>
+
+    <script>
+      let deferredPrompt;
+      const installBtn = document.getElementById('installBtn');
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        installBtn.hidden = false;
+      });
+      installBtn?.addEventListener('click', async () => {
+        deferredPrompt?.prompt();
+      });
+
+      if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+
+      const geoStatus = document.getElementById('geoStatus');
+      const listingForm = document.getElementById('listingForm');
+      const listingStatus = document.getElementById('listingStatus');
+
+      document.getElementById('geoBtn').addEventListener('click', () => {
+        navigator.geolocation.getCurrentPosition(async (pos) => {
+          const { latitude, longitude } = pos.coords;
+          listingForm.latitude.value = latitude;
+          listingForm.longitude.value = longitude;
+          const res = await fetch(`/api/location/nearby?lat=${latitude}&lon=${longitude}`);
+          const data = await res.json();
+          geoStatus.textContent = data.current.address;
+        }, () => geoStatus.textContent = 'Location access denied. You can still manually fill coordinates.');
+      });
+
+      async function refreshListings() {
+        const res = await fetch('/api/listings');
+        const data = await res.json();
+        const box = document.getElementById('listings');
+        box.innerHTML = (data.data || []).map((l) =>
+          `<article class="card"><span class="pill">${l.listingType}</span> <strong>${l.title}</strong><div class="muted">${l.city}</div><p>${l.description}</p><div>₹${l.price}</div></article>`
+        ).join('') || '<p class="muted">No listings yet.</p>';
+      }
+
+      listingForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const payload = {
+          title: listingForm.title.value,
+          description: listingForm.description.value,
+          category: listingForm.category.value,
+          listingType: listingForm.listingType.value,
+          price: Number(listingForm.price.value),
+          city: listingForm.city.value,
+          latitude: Number(listingForm.latitude.value),
+          longitude: Number(listingForm.longitude.value)
+        };
+        const res = await fetch('/api/listings', {
+          method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        listingStatus.textContent = res.ok ? `Created listing #${data.id}` : (data.error || 'Failed');
+        if (res.ok) refreshListings();
+      });
+
+      const aiForm = document.getElementById('aiForm');
+      aiForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        document.getElementById('aiStatus').textContent = 'Thinking...';
+        const res = await fetch('/api/ai/chat', {
+          method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ prompt: aiForm.prompt.value })
+        });
+        const data = await res.json();
+        document.getElementById('aiStatus').textContent = `Provider: ${data.provider || 'unknown'}`;
+        document.getElementById('aiAnswer').textContent = data.text || data.error || 'No response';
+      });
+
+      refreshListings();
+    </script>
+  </body>
+</html>
