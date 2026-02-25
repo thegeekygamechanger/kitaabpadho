@@ -53,6 +53,7 @@ const {
   marketplaceOrderCreateSchema,
   marketplaceOrdersQuerySchema,
   marketplaceOrderStatusSchema,
+  marketplaceOrderRatingSchema,
   marketplaceOrderNoteSchema,
   feedbackCreateSchema,
   feedbackListQuerySchema,
@@ -1991,20 +1992,30 @@ function createApp(deps = {}) {
         }
       }
 
+      const statusTag =
+        typeof body.tag === 'string'
+          ? sanitizeText(body.tag, 60)
+          : role === 'seller' || role === 'delivery'
+            ? nextStatus
+            : null;
+      const statusNote = typeof body.note === 'string' ? sanitizeText(body.note, 500) : null;
+
       const updated = await repository.updateMarketplaceOrderStatus({
         orderId,
         status: nextStatus,
         actorId: req.user.id,
         isAdmin,
         allowSeller: role === 'seller',
-        allowDelivery: role === 'delivery'
+        allowDelivery: role === 'delivery',
+        statusTag,
+        statusNote
       });
       if (!updated) return res.status(404).json({ error: 'Order not found or forbidden' });
 
       let orderDeliveryJob = null;
       let deliveryAudienceIds = [];
       const normalizedDeliveryMode = String(updated.deliveryMode || '').toLowerCase();
-      const needsDeliveryHandoff = normalizedDeliveryMode === 'peer_to_peer' || normalizedDeliveryMode === 'kpi_dedicated';
+      const needsDeliveryHandoff = true;
       if (
         updated.status === 'shipping' &&
         needsDeliveryHandoff &&
@@ -2061,6 +2072,16 @@ function createApp(deps = {}) {
             entityType: 'marketplace_order',
             entityId: updated.id
           });
+          if (updated.status === 'delivered' && !updated.buyerRating) {
+            await repository.createUserNotification({
+              userId: updated.buyerId,
+              kind: 'order_rating',
+              title: 'Rate your delivery',
+              body: `Order #${updated.id} delivered. Please add your rating.`,
+              entityType: 'marketplace_order',
+              entityId: updated.id
+            });
+          }
         }
         if (updated.sellerId && Number(updated.sellerId) !== Number(req.user.id)) {
           await repository.createUserNotification({
@@ -2170,6 +2191,92 @@ function createApp(deps = {}) {
       }
 
       return res.json({ ok: true, order: updated, deliveryJob: orderDeliveryJob || null });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/orders/:id/rating', requireAuth, async (req, res) => {
+    const orderId = parseId(req.params.id);
+    if (!orderId) return res.status(400).json({ error: 'Invalid order id' });
+    try {
+      const body = marketplaceOrderRatingSchema.parse(req.body);
+      if (
+        typeof repository.getMarketplaceOrderById !== 'function' ||
+        typeof repository.rateMarketplaceOrder !== 'function'
+      ) {
+        return res.status(500).json({ error: 'Order rating is not available' });
+      }
+
+      const existing = await repository.getMarketplaceOrderById(orderId);
+      if (!existing) return res.status(404).json({ error: 'Order not found' });
+
+      const { isAdmin } = await resolveActorPermissions(req);
+      if (!isAdmin && Number(existing.buyerId) !== Number(req.user.id)) {
+        return res.status(403).json({ error: 'Only the buyer can rate this order' });
+      }
+      if (String(existing.status || '') !== 'delivered') {
+        return res.status(400).json({ error: 'Rating is available only after delivery' });
+      }
+
+      const rating = Number(body.rating);
+      const remark = sanitizeText(body.remark || '', 500);
+      const updated = await repository.rateMarketplaceOrder({
+        orderId,
+        buyerId: req.user.id,
+        rating,
+        remark,
+        isAdmin
+      });
+      if (!updated) return res.status(404).json({ error: 'Order not found or forbidden' });
+
+      await logProjectAction(req, {
+        actionType: 'order.rating',
+        entityType: 'marketplace_order',
+        entityId: updated.id,
+        summary: 'Buyer rating submitted',
+        details: {
+          rating,
+          hasRemark: Boolean(remark)
+        }
+      });
+
+      if (typeof repository.createUserNotification === 'function') {
+        if (updated.sellerId && Number(updated.sellerId) !== Number(req.user.id)) {
+          await repository.createUserNotification({
+            userId: updated.sellerId,
+            kind: 'order_rating',
+            title: 'New order rating',
+            body: `Order #${updated.id} received ${rating}/5 rating.`,
+            entityType: 'marketplace_order',
+            entityId: updated.id
+          });
+        }
+        if (updated.deliveryPartnerId && Number(updated.deliveryPartnerId) !== Number(req.user.id)) {
+          await repository.createUserNotification({
+            userId: updated.deliveryPartnerId,
+            kind: 'order_rating',
+            title: 'Delivery rating submitted',
+            body: `Order #${updated.id} received ${rating}/5 rating.`,
+            entityType: 'marketplace_order',
+            entityId: updated.id
+          });
+        }
+      }
+
+      publishRealtimeEvent('orders.updated', { type: 'order_rated', orderId: updated.id }, updated.buyerId);
+      publishRealtimeEvent('orders.updated', { type: 'order_rated', orderId: updated.id }, updated.sellerId);
+      if (updated.deliveryPartnerId) {
+        publishRealtimeEvent('orders.updated', { type: 'order_rated', orderId: updated.id }, updated.deliveryPartnerId);
+      }
+      publishRealtimeEvent('notifications.invalidate', { source: 'order.rating' }, updated.buyerId);
+      publishRealtimeEvent('notifications.invalidate', { source: 'order.rating' }, updated.sellerId);
+      if (updated.deliveryPartnerId) {
+        publishRealtimeEvent('notifications.invalidate', { source: 'order.rating' }, updated.deliveryPartnerId);
+      }
+
+      return res.json({ ok: true, order: updated });
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
       return res.status(500).json({ error: error.message });
@@ -2530,6 +2637,8 @@ function createApp(deps = {}) {
       if (!canManage) return res.status(403).json({ error: 'Only assigned user, creator, or admin can update status' });
 
       const body = deliveryJobStatusSchema.parse(req.body);
+      const actorRole = String(req.user.role || '').toLowerCase();
+      const deliveryNote = sanitizeText(body.note || '', 500);
       const updated = await repository.updateDeliveryJobStatus({
         jobId,
         actorId: req.user.id,
@@ -2549,6 +2658,33 @@ function createApp(deps = {}) {
       if (updated.orderId && typeof repository.getMarketplaceOrderById === 'function') {
         linkedOrder = await repository.getMarketplaceOrderById(updated.orderId).catch(() => null);
       }
+      if (
+        linkedOrder &&
+        (actorRole === 'delivery' || isAdmin) &&
+        typeof repository.updateMarketplaceOrderStatus === 'function'
+      ) {
+        const deliveryOrderStatusMap = {
+          picked: { status: 'shipping', tag: 'picked_up' },
+          in_transit: { status: 'shipping', tag: 'in_transit' },
+          on_the_way: { status: 'out_for_delivery', tag: 'on_the_way' },
+          delivered: { status: 'delivered', tag: 'delivered' },
+          completed: { status: 'delivered', tag: 'delivered' }
+        };
+        const mapped = deliveryOrderStatusMap[String(updated.status || '').toLowerCase()];
+        if (mapped) {
+          const synced = await repository.updateMarketplaceOrderStatus({
+            orderId: linkedOrder.id,
+            status: mapped.status,
+            actorId: req.user.id,
+            isAdmin,
+            allowDelivery: true,
+            statusTag: mapped.tag,
+            statusNote: deliveryNote || null
+          });
+          if (synced) linkedOrder = synced;
+        }
+      }
+      const noteSuffix = deliveryNote ? ` Note: ${deliveryNote}` : '';
 
       if (typeof repository.createUserNotification === 'function') {
         if (updated.createdBy && Number(updated.createdBy) !== Number(req.user.id)) {
@@ -2556,7 +2692,7 @@ function createApp(deps = {}) {
             userId: updated.createdBy,
             kind: 'delivery_status',
             title: 'Delivery job status updated',
-            body: `Listing #${updated.listingId} is now ${updated.status}.`,
+            body: `Listing #${updated.listingId} is now ${updated.status}.${noteSuffix}`,
             entityType: 'delivery_job',
             entityId: updated.id
           });
@@ -2572,7 +2708,7 @@ function createApp(deps = {}) {
             userId: updated.claimedBy,
             kind: 'delivery_status',
             title: 'Delivery job status updated',
-            body: `Your delivery job #${updated.id} is now ${updated.status}.`,
+            body: `Your delivery job #${updated.id} is now ${updated.status}.${noteSuffix}`,
             entityType: 'delivery_job',
             entityId: updated.id
           });
@@ -2583,7 +2719,7 @@ function createApp(deps = {}) {
             userId: linkedOrder.sellerId,
             kind: 'delivery_status',
             title: 'Delivery status updated',
-            body: `Order #${linkedOrder.id} delivery is now ${updated.status}.`,
+            body: `Order #${linkedOrder.id} delivery is now ${updated.status}.${noteSuffix}`,
             entityType: 'marketplace_order',
             entityId: linkedOrder.id
           });
@@ -2594,7 +2730,7 @@ function createApp(deps = {}) {
             userId: linkedOrder.buyerId,
             kind: 'delivery_status',
             title: 'Delivery status updated',
-            body: `Order #${linkedOrder.id} delivery is now ${updated.status}.`,
+            body: `Order #${linkedOrder.id} delivery is now ${updated.status}.${noteSuffix}`,
             entityType: 'marketplace_order',
             entityId: linkedOrder.id
           });
@@ -2976,6 +3112,22 @@ function createApp(deps = {}) {
       });
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid query' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete('/api/admin/actions/:id', requireAuth, requireAdmin, async (req, res) => {
+    const actionId = parseId(req.params.id);
+    if (!actionId) return res.status(400).json({ error: 'Invalid action id' });
+    try {
+      if (typeof repository.deleteProjectAction !== 'function') {
+        return res.status(500).json({ error: 'Action delete is not available' });
+      }
+      const deleted = await repository.deleteProjectAction(actionId);
+      if (!deleted) return res.status(404).json({ error: 'Action not found' });
+
+      return res.json({ ok: true, deleted });
+    } catch (error) {
       return res.status(500).json({ error: error.message });
     }
   });

@@ -298,6 +298,8 @@ function renderSellerOrders(items) {
           <h3 class="card-title">${escapeHtml(item.listingTitle || `Listing #${item.listingId}`)}</h3>
           <p class="muted">Buyer: ${escapeHtml(item.buyerName || item.buyerEmail || '-')}</p>
           <p class="muted">Payment: ${escapeHtml(item.paymentMode || 'cod')} (${escapeHtml(item.paymentState || 'pending')})</p>
+          <p class="muted">Delivery step: ${escapeHtml(prettyOrderStatus(item.deliveryStatusTag || '-'))}</p>
+          <p class="muted">Delivery note: ${escapeHtml(item.deliveryNote || '-')}</p>
           <p class="muted">Items: ${formatInr(item.totalPrice)} | Delivery: ${formatInr(item.deliveryCharge)} | Total: ${formatInr(item.payableTotal)}</p>
           ${renderOrderStatusRail(item.status)}
           <div class="card-actions">
@@ -337,6 +339,8 @@ function openSellerOrderModal(orderId) {
         <p class="muted">Item: ${escapeHtml(item.listingTitle || `Listing #${item.listingId || '-'}`)}</p>
         <p class="muted">Buyer: ${escapeHtml(item.buyerName || item.buyerEmail || '-')}</p>
         <p class="muted">Quantity: ${escapeHtml(String(item.quantity || 1))}</p>
+        <p class="muted">Delivery step: ${escapeHtml(prettyOrderStatus(item.deliveryStatusTag || '-'))}</p>
+        <p class="muted">Delivery note: ${escapeHtml(item.deliveryNote || '-')}</p>
         <p class="muted">Items: ${formatInr(item.totalPrice)} | Delivery: ${formatInr(item.deliveryCharge)} | Total: ${formatInr(item.payableTotal)}</p>
         <p class="muted">Next action: ${
           nextStatuses.length
@@ -865,9 +869,10 @@ el('sellerOrdersList')?.addEventListener('click', async (event) => {
   const orderId = Number(statusBtn.dataset.id);
   const status = String(statusBtn.dataset.status || '').trim();
   if (!orderId || !status) return;
+  const note = (window.prompt('Add seller note (optional):', '') || '').trim();
   try {
     setText('sellerOrdersStatus', `Updating order #${orderId}...`);
-    await api.updateOrderStatus(orderId, status);
+    await api.updateOrderStatus(orderId, status, { tag: status, ...(note ? { note } : {}) });
     setText('sellerOrdersStatus', `Order #${orderId} updated to ${prettyOrderStatus(status)}.`);
     window.dispatchEvent(new CustomEvent('kp:orders:refresh'));
     await refreshSellerOrders();
@@ -907,10 +912,11 @@ el('sellerOrderModalContent')?.addEventListener('click', async (event) => {
   const orderId = Number(statusBtn.dataset.id || 0);
   const status = String(statusBtn.dataset.status || '').trim();
   if (!orderId || !status) return;
+  const note = (window.prompt('Add seller note (optional):', '') || '').trim();
 
   try {
     setText('sellerOrdersStatus', `Updating order #${orderId}...`);
-    await api.updateOrderStatus(orderId, status);
+    await api.updateOrderStatus(orderId, status, { tag: status, ...(note ? { note } : {}) });
     setText('sellerOrdersStatus', `Order #${orderId} updated to ${prettyOrderStatus(status)}.`);
     window.dispatchEvent(new CustomEvent('kp:orders:refresh'));
     await refreshSellerOrders();

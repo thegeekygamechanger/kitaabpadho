@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { el, escapeHtml, formatInr, renderEmpty } from './ui.js';
+import { el, escapeHtml, formatInr, hideModal, renderEmpty, showModal } from './ui.js';
 
 const STATUS_FLOW = ['received', 'packing', 'shipping', 'out_for_delivery', 'delivered'];
 
@@ -22,15 +22,68 @@ function orderStatusRail(status) {
 export function initOrders({ state, openAuthModal }) {
   const panel = el('ordersPanel');
   const navLink = el('ordersNavLink');
+  const mobileNavLink = el('mobileOrdersNavLink');
   const list = el('ordersList');
   const statusFilter = el('ordersStatusFilter');
   const refreshBtn = el('ordersRefreshBtn');
+  const ratingModal = el('orderRatingModal');
+  const ratingContent = el('orderRatingContent');
+  const closeRatingBtn = el('closeOrderRatingBtn');
   let currentOrders = [];
+  let activeRatingOrderId = null;
+  const promptedDeliveredOrders = new Set();
+
+  function closeRatingModal() {
+    activeRatingOrderId = null;
+    hideModal('orderRatingModal');
+  }
+
+  function renderRatingModal(order, statusText = '') {
+    if (!ratingContent || !order) return;
+    const orderId = Number(order.id || 0);
+    const existingRating = Number(order.buyerRating || 0);
+    ratingContent.innerHTML = `
+      <div class="order-success-head">
+        <p class="order-success-kicker">Delivery Completed</p>
+        <h3>Rate order #${escapeHtml(String(orderId))}</h3>
+      </div>
+      <p class="muted">Item: ${escapeHtml(order.listingTitle || `Listing #${order.listingId || '-'}`)}</p>
+      <form id="orderRatingForm" class="drawer">
+        <label class="field-label" for="orderRatingInput">Rating (1-5)</label>
+        <input id="orderRatingInput" class="kb-input" type="number" min="1" max="5" step="1" value="${escapeHtml(
+          String(existingRating > 0 ? existingRating : 5)
+        )}" required />
+        <label class="field-label" for="orderRatingRemark">Remark (optional)</label>
+        <textarea id="orderRatingRemark" class="kb-textarea" placeholder="Share delivery feedback">${escapeHtml(
+          order.buyerRatingRemark || ''
+        )}</textarea>
+        <div class="drawer-actions">
+          <button class="kb-btn kb-btn-primary" type="submit">Submit Rating</button>
+          <button id="orderRatingCancelBtn" class="kb-btn kb-btn-ghost" type="button">Later</button>
+        </div>
+      </form>
+      <p id="orderRatingStatus" class="muted">${escapeHtml(statusText)}</p>
+    `;
+  }
+
+  function maybePromptRating() {
+    if (!state.user?.id) return;
+    if (activeRatingOrderId) return;
+    const pending = currentOrders.find(
+      (item) => String(item.status || '') === 'delivered' && !item.buyerRating && !promptedDeliveredOrders.has(Number(item.id))
+    );
+    if (!pending) return;
+    promptedDeliveredOrders.add(Number(pending.id));
+    activeRatingOrderId = Number(pending.id);
+    renderRatingModal(pending);
+    showModal('orderRatingModal');
+  }
 
   function render() {
     const isAuthed = Boolean(state.user?.id);
     if (panel) panel.classList.toggle('hidden', !isAuthed);
     if (navLink) navLink.hidden = !isAuthed;
+    if (mobileNavLink) mobileNavLink.hidden = !isAuthed;
     if (!isAuthed) {
       if (list) list.innerHTML = renderEmpty('Login to view your orders.');
       const statusNode = el('ordersStatus');
@@ -61,10 +114,18 @@ export function initOrders({ state, openAuthModal }) {
               <h3 class="card-title">${escapeHtml(item.listingTitle || `Listing #${item.listingId}`)}</h3>
               <p class="muted">Seller: ${escapeHtml(item.sellerName || '-')}</p>
               <p class="muted">Mode: ${escapeHtml(item.paymentMode || 'cod')} | Payment: ${escapeHtml(item.paymentState || 'pending')}</p>
+              <p class="muted">Delivery step: ${escapeHtml(prettyStatus(item.deliveryStatusTag || '-'))}</p>
+              <p class="muted">Delivery remark: ${escapeHtml(item.deliveryNote || '-')}</p>
+              <p class="muted">Your rating: ${item.buyerRating ? `${escapeHtml(String(item.buyerRating))}/5` : 'Pending'}</p>
               <p class="muted">Items: ${formatInr(item.totalPrice)} | Delivery: ${formatInr(item.deliveryCharge)} | Total: ${formatInr(payable)}</p>
               ${orderStatusRail(item.status)}
               <div class="card-actions">
                 <button class="kb-btn kb-btn-dark order-view-btn" data-id="${item.id}" type="button">View</button>
+                ${
+                  String(item.status || '') === 'delivered' && !item.buyerRating
+                    ? `<button class="kb-btn kb-btn-primary order-rate-btn" data-id="${item.id}" type="button">Rate Delivery</button>`
+                    : ''
+                }
               </div>
             </div>
           </article>`;
@@ -92,6 +153,7 @@ export function initOrders({ state, openAuthModal }) {
       });
       currentOrders = Array.isArray(result.data) ? result.data : [];
       render();
+      maybePromptRating();
     } catch (error) {
       if (list) list.innerHTML = `<article class="state-empty state-error">${escapeHtml(error.message || 'Unable to load orders')}</article>`;
       if (statusNode) statusNode.textContent = error.message || 'Unable to load orders';
@@ -110,13 +172,75 @@ export function initOrders({ state, openAuthModal }) {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
 
+    const rateBtn = target.closest('.order-rate-btn');
+    if (rateBtn) {
+      const order = currentOrders.find((item) => Number(item.id) === Number(rateBtn.dataset.id));
+      if (!order) return;
+      activeRatingOrderId = Number(order.id);
+      renderRatingModal(order);
+      showModal('orderRatingModal');
+      return;
+    }
+
     const viewBtn = target.closest('.order-view-btn');
     if (!viewBtn) return;
     const row = currentOrders.find((item) => Number(item.id) === Number(viewBtn.dataset.id));
     if (!row) return;
     window.alert(
-      `Order #${row.id}\nItem: ${row.listingTitle}\nStatus: ${prettyStatus(row.status)}\nPayment: ${row.paymentMode} (${row.paymentState})\nPayable: ${formatInr(row.payableTotal || row.totalPrice)}`
+      `Order #${row.id}\nItem: ${row.listingTitle}\nStatus: ${prettyStatus(row.status)}\nPayment: ${row.paymentMode} (${row.paymentState})\nDelivery step: ${prettyStatus(
+        row.deliveryStatusTag || '-'
+      )}\nRemark: ${row.deliveryNote || '-'}\nPayable: ${formatInr(row.payableTotal || row.totalPrice)}`
     );
+  });
+
+  closeRatingBtn?.addEventListener('click', () => {
+    closeRatingModal();
+  });
+
+  ratingModal?.addEventListener('click', (event) => {
+    if (event.target === ratingModal) {
+      closeRatingModal();
+    }
+  });
+
+  ratingContent?.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.closest('#orderRatingCancelBtn')) {
+      closeRatingModal();
+    }
+  });
+
+  ratingContent?.addEventListener('submit', async (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || form.id !== 'orderRatingForm') return;
+    event.preventDefault();
+    if (!activeRatingOrderId) return;
+    const ratingInput = el('orderRatingInput');
+    const remarkInput = el('orderRatingRemark');
+    const statusNode = el('orderRatingStatus');
+    const rating = Number(ratingInput?.value || 0);
+    if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
+      if (statusNode) statusNode.textContent = 'Rating must be between 1 and 5.';
+      return;
+    }
+    if (statusNode) statusNode.textContent = 'Submitting rating...';
+    try {
+      const result = await api.rateOrder(activeRatingOrderId, {
+        rating,
+        remark: String(remarkInput?.value || '').trim()
+      });
+      if (result?.order?.id) {
+        currentOrders = currentOrders.map((item) =>
+          Number(item.id) === Number(result.order.id) ? { ...item, ...result.order } : item
+        );
+      }
+      render();
+      closeRatingModal();
+      window.dispatchEvent(new CustomEvent('kp:orders:refresh'));
+    } catch (error) {
+      if (statusNode) statusNode.textContent = error.message || 'Unable to submit rating.';
+    }
   });
 
   window.addEventListener('kp:orders:refresh', () => {

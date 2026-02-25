@@ -18,6 +18,8 @@ export function initNotifications({ state, openAuthModal }) {
   const listNode = el('notificationsList');
   const btn = el('notificationsBtn');
   const countNode = el('notificationsCount');
+  const mobileNavLink = el('mobileNotificationsNavLink');
+  const mobileCountNode = el('mobileNotificationsCount');
   const refreshBtn = el('notificationsRefreshBtn');
   const readAllBtn = el('notificationsReadAllBtn');
   let pollTimer = null;
@@ -31,9 +33,11 @@ export function initNotifications({ state, openAuthModal }) {
     const visible = isAuthed();
     if (panel) panel.classList.toggle('hidden', !visible);
     if (btn) btn.hidden = !visible;
+    if (mobileNavLink) mobileNavLink.hidden = !visible;
     if (!visible) {
       if (listNode) listNode.innerHTML = '';
       if (countNode) countNode.textContent = '0';
+      if (mobileCountNode) mobileCountNode.textContent = '0';
       setText('notificationsStatus', 'Login to receive alerts for new arrivals and community updates.');
       lastUnreadCount = 0;
     }
@@ -82,6 +86,7 @@ export function initNotifications({ state, openAuthModal }) {
       if (state.notifications.unreadCount > lastUnreadCount) playNotificationSound();
       lastUnreadCount = state.notifications.unreadCount;
       if (countNode) countNode.textContent = String(state.notifications.unreadCount);
+      if (mobileCountNode) mobileCountNode.textContent = String(state.notifications.unreadCount);
       setText('notificationsStatus', `Unread: ${state.notifications.unreadCount}`);
     } catch (error) {
       setText('notificationsStatus', error.message || 'Unable to load notifications');

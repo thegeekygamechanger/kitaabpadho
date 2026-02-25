@@ -91,15 +91,20 @@ export const api = {
   listDeliveryJobs: (filters) => apiRequest(`/api/delivery/jobs${buildQuery(filters)}`),
   deliveryJobById: (jobId) => apiRequest(`/api/delivery/jobs/${jobId}`),
   claimDeliveryJob: (jobId) => apiRequest(`/api/delivery/jobs/${jobId}/claim`, { method: 'POST' }),
-  updateDeliveryJobStatus: (jobId, status) =>
-    apiRequest(`/api/delivery/jobs/${jobId}/status`, { method: 'PUT', body: { status } }),
+  updateDeliveryJobStatus: (jobId, status, note = '') =>
+    apiRequest(`/api/delivery/jobs/${jobId}/status`, {
+      method: 'PUT',
+      body: { status, ...(note ? { note } : {}) }
+    }),
   deleteDeliveryJob: (jobId) => apiRequest(`/api/delivery/jobs/${jobId}`, { method: 'DELETE' }),
   createMarketplaceOrder: (data) => apiRequest('/api/orders', { method: 'POST', body: data }),
   listMyOrders: (filters) => apiRequest(`/api/orders/mine${buildQuery(filters)}`),
   listSellerOrders: (filters) => apiRequest(`/api/orders/seller${buildQuery(filters)}`),
   listDeliveryOrders: (filters) => apiRequest(`/api/orders/delivery${buildQuery(filters)}`),
   orderById: (orderId) => apiRequest(`/api/orders/${orderId}`),
-  updateOrderStatus: (orderId, status) => apiRequest(`/api/orders/${orderId}/status`, { method: 'PUT', body: { status } }),
+  updateOrderStatus: (orderId, status, extra = {}) =>
+    apiRequest(`/api/orders/${orderId}/status`, { method: 'PUT', body: { status, ...(extra || {}) } }),
+  rateOrder: (orderId, payload) => apiRequest(`/api/orders/${orderId}/rating`, { method: 'POST', body: payload }),
   askAI: (payload) => apiRequest('/api/ai/chat', { method: 'POST', body: payload }),
   createFeedback: (data) => apiRequest('/api/feedback', { method: 'POST', body: data }),
   listMyFeedback: (filters) => apiRequest(`/api/feedback/mine${buildQuery(filters)}`),
@@ -117,6 +122,7 @@ export const api = {
   adminSetDeliveryRate: (amountPer10Km) =>
     apiRequest('/api/admin/settings/delivery-rate', { method: 'PUT', body: { amountPer10Km } }),
   listAdminActions: (filters) => apiRequest(`/api/admin/actions${buildQuery(filters)}`),
+  adminDeleteAction: (actionId) => apiRequest(`/api/admin/actions/${actionId}`, { method: 'DELETE' }),
   listAdminFeedback: (filters) => apiRequest(`/api/admin/feedback${buildQuery(filters)}`),
   listAdminUsers: (filters) => apiRequest(`/api/admin/users${buildQuery(filters)}`),
   adminUserById: (userId) => apiRequest(`/api/admin/users/${userId}`),

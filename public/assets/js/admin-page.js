@@ -37,6 +37,12 @@ const crudState = {
   users: [],
   adminUser: null
 };
+const actionsState = {
+  limit: 20,
+  offset: 0,
+  total: 0,
+  lastCount: 0
+};
 
 initFormEnhancements();
 try {
@@ -136,6 +142,7 @@ function renderActions(actions) {
           <th>Action</th>
           <th>Entity</th>
           <th>Summary</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -149,12 +156,33 @@ function renderActions(actions) {
               <td>${escapeHtml(item.actionType || '-')}</td>
               <td>${escapeHtml(entity)}</td>
               <td>${escapeHtml(item.summary || '-')}</td>
+              <td><button class="kb-btn kb-btn-dark admin-action-delete-btn" data-id="${item.id}" type="button">Delete</button></td>
             </tr>`;
           })
           .join('')}
       </tbody>
     </table>
   </div>`;
+}
+
+function updateActionsPagination(meta = {}, count = 0) {
+  const total = Number(meta.total || 0);
+  actionsState.total = Number.isFinite(total) ? total : 0;
+  actionsState.lastCount = Number(count || 0);
+  const currentPage = Math.floor(actionsState.offset / actionsState.limit) + 1;
+  const totalPages = Math.max(1, Math.ceil(actionsState.total / actionsState.limit));
+  const start = actionsState.total > 0 ? actionsState.offset + 1 : 0;
+  const end = actionsState.total > 0 ? Math.min(actionsState.offset + actionsState.lastCount, actionsState.total) : 0;
+  setText(
+    'adminActionsPageStatus',
+    actionsState.total > 0
+      ? `Page ${fmtNumber(currentPage)} / ${fmtNumber(totalPages)} • ${fmtNumber(start)}-${fmtNumber(end)} of ${fmtNumber(actionsState.total)}`
+      : 'Page 1 / 1 • 0 actions'
+  );
+  const prevBtn = el('adminActionsPrevBtn');
+  const nextBtn = el('adminActionsNextBtn');
+  if (prevBtn) prevBtn.disabled = actionsState.offset <= 0;
+  if (nextBtn) nextBtn.disabled = actionsState.offset + actionsState.limit >= actionsState.total;
 }
 
 function rowActions(kind, id) {
@@ -311,20 +339,39 @@ function getFilters() {
     q: el('adminSearchInput')?.value.trim() || '',
     actionType: el('adminActionTypeFilter')?.value.trim().toLowerCase() || '',
     entityType: el('adminEntityTypeFilter')?.value.trim().toLowerCase() || '',
-    limit: 80,
-    offset: 0
+    limit: actionsState.limit,
+    offset: actionsState.offset
   };
 }
 
 async function refreshAdminData() {
   try {
     const [summary, actionsResult] = await Promise.all([api.adminSummary(), api.listAdminActions(getFilters())]);
+    const actions = Array.isArray(actionsResult.data) ? actionsResult.data : [];
     renderSummary(summary);
-    renderActions(actionsResult.data || []);
-    setText('adminStatus', `Showing ${fmtNumber(actionsResult.data?.length || 0)} actions`);
+    renderActions(actions);
+    updateActionsPagination(actionsResult.meta || {}, actions.length);
+    setText(
+      'adminStatus',
+      `Showing ${fmtNumber(actions.length)} actions (total ${fmtNumber(actionsState.total)}).`
+    );
   } catch (error) {
     setText('adminStatus', error.message || 'Unable to load admin data');
   }
+}
+
+async function deleteActionById(actionId) {
+  const numericId = Number(actionId);
+  if (!Number.isFinite(numericId) || numericId <= 0) return;
+  if (!window.confirm(`Delete action #${numericId}?`)) return;
+  setText('adminStatus', `Deleting action #${numericId}...`);
+  await api.adminDeleteAction(numericId);
+  const remaining = Math.max(0, actionsState.total - 1);
+  if (actionsState.offset > 0 && actionsState.offset >= remaining) {
+    actionsState.offset = Math.max(0, actionsState.offset - actionsState.limit);
+  }
+  await refreshAdminData();
+  setText('adminStatus', `Action #${numericId} deleted.`);
 }
 
 async function refreshCrudData() {
@@ -700,12 +747,16 @@ async function checkAdminSession() {
     syncAdminTabs();
     if (!me.authenticated) {
       crudState.adminUser = null;
+      actionsState.offset = 0;
+      updateActionsPagination({}, 0);
       setText('adminLoginStatus', 'Login with an admin account to open this panel.');
       setText('adminStatus', 'Admin login required.');
       return;
     }
     if (!isAdmin) {
       crudState.adminUser = null;
+      actionsState.offset = 0;
+      updateActionsPagination({}, 0);
       const role = me.user?.role || 'unknown';
       setText('adminLoginStatus', `Logged in as ${role}. Admin role is required.`);
       setText('adminStatus', 'Current account is not an admin account.');
@@ -726,6 +777,8 @@ async function checkAdminSession() {
     }
   } catch (error) {
     crudState.adminUser = null;
+    actionsState.offset = 0;
+    updateActionsPagination({}, 0);
     syncAdminHeader(false, false);
     el('adminLoginPanel')?.classList.remove('hidden');
     el('adminMainPanel')?.classList.add('hidden');
@@ -765,7 +818,29 @@ el('adminRefreshBtn')?.addEventListener('click', () => {
 });
 
 el('adminApplyFiltersBtn')?.addEventListener('click', () => {
+  actionsState.offset = 0;
   refreshAdminData().catch(() => null);
+});
+
+el('adminActionsPrevBtn')?.addEventListener('click', () => {
+  if (actionsState.offset <= 0) return;
+  actionsState.offset = Math.max(0, actionsState.offset - actionsState.limit);
+  refreshAdminData().catch(() => null);
+});
+
+el('adminActionsNextBtn')?.addEventListener('click', () => {
+  if (actionsState.offset + actionsState.limit >= actionsState.total) return;
+  actionsState.offset += actionsState.limit;
+  refreshAdminData().catch(() => null);
+});
+
+['adminSearchInput', 'adminActionTypeFilter', 'adminEntityTypeFilter'].forEach((id) => {
+  el(id)?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    actionsState.offset = 0;
+    refreshAdminData().catch(() => null);
+  });
 });
 
 el('adminCrudRefreshBtn')?.addEventListener('click', () => {
@@ -915,6 +990,18 @@ el('adminMainPanel')?.addEventListener('click', async (event) => {
   }
 });
 
+el('adminActionsList')?.addEventListener('click', async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const button = target.closest('.admin-action-delete-btn');
+  if (!button) return;
+  try {
+    await deleteActionById(button.dataset.id);
+  } catch (error) {
+    setText('adminStatus', error.message || 'Unable to delete action');
+  }
+});
+
 el('adminBannerList')?.addEventListener('click', async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
@@ -986,4 +1073,5 @@ window.addEventListener('hashchange', () => {
   syncAdminTabs();
 });
 
+updateActionsPagination({}, 0);
 checkAdminSession().catch(() => null);

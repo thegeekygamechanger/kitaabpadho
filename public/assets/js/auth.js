@@ -11,6 +11,8 @@ export function initAuth({ state, onAuthChanged }) {
   const aiNavLink = el('aiNavLink');
   const ordersNavLink = el('ordersNavLink');
   const supportNavLink = el('supportNavLink');
+  const mobileCommunityNavLink = el('mobileCommunityNavLink');
+  const mobileAiNavLink = el('mobileAiNavLink');
   const authStatus = el('authStatus');
   const loginForm = el('loginForm');
   const registerForm = el('registerForm');
@@ -25,6 +27,8 @@ export function initAuth({ state, onAuthChanged }) {
       if (aiNavLink) aiNavLink.hidden = false;
       if (ordersNavLink) ordersNavLink.hidden = false;
       if (supportNavLink) supportNavLink.hidden = false;
+      if (mobileCommunityNavLink) mobileCommunityNavLink.hidden = false;
+      if (mobileAiNavLink) mobileAiNavLink.hidden = false;
       if (authBadge) {
         authBadge.textContent = `Hi ${state.user.fullName}`;
         authBadge.classList.add('is-user');
@@ -37,6 +41,8 @@ export function initAuth({ state, onAuthChanged }) {
       if (aiNavLink) aiNavLink.hidden = true;
       if (ordersNavLink) ordersNavLink.hidden = true;
       if (supportNavLink) supportNavLink.hidden = true;
+      if (mobileCommunityNavLink) mobileCommunityNavLink.hidden = true;
+      if (mobileAiNavLink) mobileAiNavLink.hidden = true;
       if (authBadge) {
         authBadge.textContent = 'Guest Mode';
         authBadge.classList.remove('is-user');

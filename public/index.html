@@ -13,9 +13,9 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/assets/css/app.css?v=20260226j" />
+    <link rel="stylesheet" href="/assets/css/app.css?v=20260226m" />
   </head>
-  <body>
+  <body class="client-app">
     <header class="kb-header">
       <div class="kb-topbar kb-topbar-market">
         <a class="kb-brand" href="#home">
@@ -298,6 +298,18 @@
       </section>
     </main>
 
+    <nav id="mobileNav" class="kb-mobile-nav" aria-label="Mobile quick navigation">
+      <a id="mobileMarketplaceNavLink" class="active" href="#marketplace">Home</a>
+      <a id="mobileCommunityNavLink" href="#community" hidden>Community</a>
+      <a id="mobileAiNavLink" href="#ai" hidden>PadhAI</a>
+      <a id="mobileOrdersNavLink" href="#ordersPanel" hidden>Orders</a>
+      <a id="mobileNotificationsNavLink" href="#notificationsPanel" hidden>
+        Alerts
+        <span id="mobileNotificationsCount" class="mobile-nav-count">0</span>
+      </a>
+      <a id="mobileProfileNavLink" href="#profilePanel" hidden>Profile</a>
+    </nav>
+
     <footer class="kb-footer">
       <p>Made by UPSC aspirant. Built for learners across India. KitaabPadhoIndia. @2026 copyright</p>
     </footer>
@@ -358,6 +370,13 @@
       </div>
     </section>
 
+    <section id="orderRatingModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-card rating-modal-card">
+        <button id="closeOrderRatingBtn" class="modal-close" type="button">x</button>
+        <div id="orderRatingContent"></div>
+      </div>
+    </section>
+
     <section id="updateModal" class="modal hidden" aria-hidden="true">
       <div class="modal-card update-card">
         <h3>Update Available</h3>
@@ -369,7 +388,7 @@
       </div>
     </section>
 
-    <script type="module" src="/assets/js/app.js?v=20260226j"></script>
+    <script type="module" src="/assets/js/app.js?v=20260226m"></script>
   </body>
 </html>
 

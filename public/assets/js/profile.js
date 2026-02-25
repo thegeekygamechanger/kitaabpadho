@@ -13,6 +13,7 @@ function toUint8Array(base64String) {
 export function initProfile({ state, openAuthModal, onUserUpdated }) {
   const panel = el('profilePanel');
   const navLink = el('profileNavLink');
+  const mobileNavLink = el('mobileProfileNavLink');
   const profileForm = el('profileForm');
   const passwordForm = el('profilePasswordForm');
   const totpSetupBtn = el('totpSetupBtn');
@@ -29,6 +30,7 @@ export function initProfile({ state, openAuthModal, onUserUpdated }) {
     const visible = isAuthed();
     if (panel) panel.classList.toggle('hidden', !visible);
     if (navLink) navLink.hidden = !visible;
+    if (mobileNavLink) mobileNavLink.hidden = !visible;
     if (!visible) {
       setText('profileSummary', 'Login to manage profile.');
       setText('totpSecretView', '');

@@ -227,7 +227,10 @@ const deliveryJobsQuerySchema = z.object({
   radiusKm: optionalNumber(z.number().min(1).max(500)).default(250),
   city: z.string().trim().min(1).max(120).optional(),
   areaCode: z.string().trim().min(1).max(120).optional(),
-  status: z.enum(['open', 'claimed', 'picked', 'on_the_way', 'delivered', 'rejected', 'completed', 'cancelled']).optional().default('open'),
+  status: z
+    .enum(['open', 'claimed', 'picked', 'in_transit', 'on_the_way', 'delivered', 'rejected', 'completed', 'cancelled'])
+    .optional()
+    .default('open'),
   limit: optionalNumber(z.number().int().min(1).max(100)).default(25),
   offset: optionalNumber(z.number().int().min(0).max(10000)).default(0)
 });
@@ -273,7 +276,7 @@ const locationGeocodeSchema = z.object({
 });
 
 const deliveryJobStatusSchema = z.object({
-  status: z.enum(['open', 'claimed', 'picked', 'on_the_way', 'delivered', 'rejected', 'completed', 'cancelled']),
+  status: z.enum(['open', 'claimed', 'picked', 'in_transit', 'on_the_way', 'delivered', 'rejected', 'completed', 'cancelled']),
   note: z.string().trim().max(500).optional().default('')
 });
 
@@ -305,6 +308,17 @@ const marketplaceOrderStatusSchema = z.object({
   status: orderStatusEnum,
   tag: z.string().trim().max(60).optional(),
   note: z.string().trim().max(500).optional()
+});
+
+const marketplaceOrderRatingSchema = z.object({
+  rating: z.preprocess(
+    (value) => {
+      const asNumber = Number(value);
+      return Number.isNaN(asNumber) ? value : asNumber;
+    },
+    z.number().int().min(1).max(5)
+  ),
+  remark: z.string().trim().max(500).optional().default('')
 });
 
 const marketplaceOrderNoteSchema = z.object({
@@ -352,6 +366,7 @@ module.exports = {
   marketplaceOrderCreateSchema,
   marketplaceOrdersQuerySchema,
   marketplaceOrderStatusSchema,
+  marketplaceOrderRatingSchema,
   marketplaceOrderNoteSchema,
   feedbackCreateSchema,
   feedbackListQuerySchema,

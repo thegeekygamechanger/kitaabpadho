@@ -37,6 +37,18 @@ const TAB_LINK_IDS = {
   deliverySupportPanel: 'deliverySupportNav'
 };
 const ORDER_FLOW = ['received', 'packing', 'shipping', 'out_for_delivery', 'delivered', 'cancelled'];
+const DELIVERY_WORK_STATUSES = ['claimed', 'picked', 'in_transit', 'on_the_way'];
+const DELIVERY_JOB_ALL_STATUSES = [
+  'open',
+  'claimed',
+  'picked',
+  'in_transit',
+  'on_the_way',
+  'delivered',
+  'rejected',
+  'completed',
+  'cancelled'
+];
 
 initFormEnhancements();
 
@@ -193,6 +205,12 @@ function prettyOrderStatus(status) {
   return String(status || '').replaceAll('_', ' ');
 }
 
+function promptDeliveryRemark(defaultValue = '') {
+  const raw = window.prompt('Add delivery remark (optional):', defaultValue || '');
+  if (raw === null) return null;
+  return String(raw || '').trim();
+}
+
 function renderOrderStatusRail(status) {
   if (status === 'cancelled') {
     return `<div class="order-status-rail"><span class="order-step current">cancelled</span></div>`;
@@ -224,9 +242,10 @@ function renderWorkJobs(items) {
           <h3 class="card-title">${escapeHtml(item.listingTitle || `Listing #${item.listingId}`)}</h3>
           <p class="muted">${escapeHtml(item.pickupCity || '')} | ${escapeHtml(item.pickupAreaCode || '')}</p>
           <div class="order-workflow-actions">
-            <button class="kb-btn kb-btn-ghost delivery-work-status-btn" data-id="${item.id}" data-stage="in_progress" type="button">In Progress</button>
+            <button class="kb-btn kb-btn-ghost delivery-work-status-btn" data-id="${item.id}" data-stage="picked_up" type="button">Picked Up</button>
+            <button class="kb-btn kb-btn-ghost delivery-work-status-btn" data-id="${item.id}" data-stage="in_transit" type="button">In Transit</button>
             <button class="kb-btn kb-btn-ghost delivery-work-status-btn" data-id="${item.id}" data-stage="on_the_way" type="button">On The Way</button>
-            <button class="kb-btn kb-btn-dark delivery-work-status-btn" data-id="${item.id}" data-stage="done" type="button">Done Delivery</button>
+            <button class="kb-btn kb-btn-dark delivery-work-status-btn" data-id="${item.id}" data-stage="delivered" type="button">Delivered</button>
           </div>
         </div>
       </article>`;
@@ -246,12 +265,21 @@ function renderDeliveryOrders(items) {
       const actions = [];
       if (item.status === 'shipping') {
         actions.push(
-          `<button class="kb-btn kb-btn-ghost delivery-order-status-btn" data-id="${item.id}" data-status="out_for_delivery" type="button">Out for Delivery</button>`
+          `<button class="kb-btn kb-btn-ghost delivery-order-status-btn" data-id="${item.id}" data-status="shipping" data-tag="picked_up" type="button">Picked Up</button>`
+        );
+        actions.push(
+          `<button class="kb-btn kb-btn-ghost delivery-order-status-btn" data-id="${item.id}" data-status="shipping" data-tag="in_transit" type="button">In Transit</button>`
+        );
+        actions.push(
+          `<button class="kb-btn kb-btn-ghost delivery-order-status-btn" data-id="${item.id}" data-status="out_for_delivery" data-tag="on_the_way" type="button">On The Way</button>`
         );
       }
       if (item.status === 'out_for_delivery') {
         actions.push(
-          `<button class="kb-btn kb-btn-dark delivery-order-status-btn" data-id="${item.id}" data-status="delivered" type="button">Mark Delivered</button>`
+          `<button class="kb-btn kb-btn-ghost delivery-order-status-btn" data-id="${item.id}" data-status="out_for_delivery" data-tag="on_the_way" type="button">On The Way</button>`
+        );
+        actions.push(
+          `<button class="kb-btn kb-btn-dark delivery-order-status-btn" data-id="${item.id}" data-status="delivered" data-tag="delivered" type="button">Mark Delivered</button>`
         );
       }
       actions.push(
@@ -270,6 +298,8 @@ function renderDeliveryOrders(items) {
           <h3 class="card-title">${escapeHtml(item.listingTitle || `Listing #${item.listingId}`)}</h3>
           <p class="muted">Buyer: ${escapeHtml(item.buyerName || item.buyerEmail || '-')}</p>
           <p class="muted">Seller: ${escapeHtml(item.sellerName || '-')}</p>
+          <p class="muted">Delivery step: ${escapeHtml(prettyOrderStatus(item.deliveryStatusTag || '-'))}</p>
+          <p class="muted">Remark: ${escapeHtml(item.deliveryNote || '-')}</p>
           <p class="muted">Delivery fee: ${formatInr(item.deliveryCharge)} | Paycheck: ${formatInr(item.paycheckAmount)}</p>
           <p class="muted">Paycheck status: ${escapeHtml(item.paycheckStatus || 'pending')}</p>
           ${renderOrderStatusRail(item.status)}
@@ -318,7 +348,7 @@ async function refreshJobs() {
     let jobs = [];
 
     if (statusFilter === 'all') {
-      const statuses = ['open', 'claimed', 'completed', 'cancelled'];
+      const statuses = DELIVERY_JOB_ALL_STATUSES;
       const results = await Promise.all(
         statuses.map((status) => api.listDeliveryJobs({ ...baseFilters, status }).catch(() => ({ data: [] })))
       );
@@ -353,12 +383,25 @@ async function refreshWorkJobs() {
   }
   try {
     const baseFilters = buildBaseFilters();
-    const result = await api.listDeliveryJobs({ ...baseFilters, status: 'claimed' });
-    currentWorkJobs = Array.isArray(result.data)
-      ? result.data.filter((item) => Number(item.claimedBy) === Number(currentUser?.id))
-      : [];
+    const results = await Promise.all(
+      DELIVERY_WORK_STATUSES.map((status) =>
+        api.listDeliveryJobs({ ...baseFilters, status }).catch(() => ({ data: [] }))
+      )
+    );
+    const merged = [];
+    const seen = new Set();
+    for (const result of results) {
+      for (const item of result.data || []) {
+        const key = Number(item.id);
+        if (!Number.isFinite(key) || seen.has(key)) continue;
+        seen.add(key);
+        merged.push(item);
+      }
+    }
+    currentWorkJobs = merged.filter((item) => Number(item.claimedBy) === Number(currentUser?.id));
+    currentWorkJobs.sort((a, b) => Number(b.id) - Number(a.id));
     renderWorkJobs(currentWorkJobs);
-    setText('deliveryWorkStatus', `Claimed jobs: ${currentWorkJobs.length}`);
+    setText('deliveryWorkStatus', `Active work jobs: ${currentWorkJobs.length}`);
   } catch (error) {
     setText('deliveryWorkStatus', error.message || 'Unable to load work queue');
   }
@@ -711,16 +754,23 @@ el('deliveryJobs')?.addEventListener('click', async (event) => {
     }
     const item = currentJobs.find((row) => Number(row.id) === Number(updateBtn.dataset.id));
     if (!item) return;
-    const nextStatus = (window.prompt('Enter status: open, claimed, completed, cancelled', item.status || 'open') || '')
+    const nextStatus = (
+      window.prompt(
+        'Enter status: open, claimed, picked, in_transit, on_the_way, delivered, rejected, completed, cancelled',
+        item.status || 'open'
+      ) || ''
+    )
       .trim()
       .toLowerCase();
     if (!nextStatus) return;
-    if (!['open', 'claimed', 'completed', 'cancelled'].includes(nextStatus)) {
+    if (!DELIVERY_JOB_ALL_STATUSES.includes(nextStatus)) {
       setText('deliveryStatus', 'Invalid status.');
       return;
     }
+    const remark = promptDeliveryRemark(item.note || '');
+    if (remark === null) return;
     try {
-      await api.updateDeliveryJobStatus(item.id, nextStatus);
+      await api.updateDeliveryJobStatus(item.id, nextStatus, remark);
       setText('deliveryStatus', `Job #${item.id} updated to ${nextStatus}.`);
       await refreshJobs();
     } catch (error) {
@@ -761,27 +811,41 @@ el('deliveryWorkList')?.addEventListener('click', async (event) => {
   const job = currentWorkJobs.find((item) => Number(item.id) === Number(button.dataset.id));
   if (!job) return;
   const stage = String(button.dataset.stage || '');
+  const remark = promptDeliveryRemark(job.deliveryNote || '');
+  if (remark === null) return;
   try {
     setText('deliveryWorkStatus', `Updating job #${job.id}...`);
-    if (stage === 'in_progress') {
+    if (stage === 'picked_up') {
       const order = await resolveOpenOrderForJob(job);
       if (order && ['received', 'packing'].includes(String(order.status || ''))) {
-        await api.updateOrderStatus(order.id, 'shipping');
+        await api.updateOrderStatus(order.id, 'shipping', { tag: 'picked_up', note: remark });
+      } else if (order && String(order.status || '') === 'shipping') {
+        await api.updateOrderStatus(order.id, 'shipping', { tag: 'picked_up', note: remark });
       }
-      await api.updateDeliveryJobStatus(job.id, 'claimed');
-      setText('deliveryWorkStatus', `Job #${job.id} moved to in progress.`);
+      await api.updateDeliveryJobStatus(job.id, 'picked', remark);
+      setText('deliveryWorkStatus', `Job #${job.id} marked as picked up.`);
+    } else if (stage === 'in_transit') {
+      const order = await resolveOpenOrderForJob(job);
+      if (!order) {
+        setText('deliveryWorkStatus', `No active order found for listing #${job.listingId}.`);
+        return;
+      }
+      await api.updateOrderStatus(order.id, 'shipping', { tag: 'in_transit', note: remark });
+      await api.updateDeliveryJobStatus(job.id, 'in_transit', remark);
+      setText('deliveryWorkStatus', `Order #${order.id} marked in transit.`);
     } else if (stage === 'on_the_way') {
       const order = await resolveOpenOrderForJob(job);
       if (!order) {
         setText('deliveryWorkStatus', `No active order found for listing #${job.listingId}.`);
         return;
       }
-      await api.updateOrderStatus(order.id, 'out_for_delivery');
-      setText('deliveryWorkStatus', `Order #${order.id} is out for delivery.`);
-    } else if (stage === 'done') {
+      await api.updateOrderStatus(order.id, 'out_for_delivery', { tag: 'on_the_way', note: remark });
+      await api.updateDeliveryJobStatus(job.id, 'on_the_way', remark);
+      setText('deliveryWorkStatus', `Order #${order.id} is on the way.`);
+    } else if (stage === 'delivered') {
       const order = await resolveOpenOrderForJob(job);
       if (order) {
-        const updated = await api.updateOrderStatus(order.id, 'delivered');
+        const updated = await api.updateOrderStatus(order.id, 'delivered', { tag: 'delivered', note: remark });
         if (updated?.order?.paycheckStatus === 'released') {
           setText(
             'deliveryWorkStatus',
@@ -793,7 +857,7 @@ el('deliveryWorkList')?.addEventListener('click', async (event) => {
       } else {
         setText('deliveryWorkStatus', `No active order found for listing #${job.listingId}.`);
       }
-      await api.updateDeliveryJobStatus(job.id, 'completed');
+      await api.updateDeliveryJobStatus(job.id, 'delivered', remark);
     }
     await refreshJobs();
     await refreshWorkJobs();
@@ -815,6 +879,8 @@ el('deliveryOrdersList')?.addEventListener('click', async (event) => {
     window.alert(
       `Order #${item.id}\nItem: ${item.listingTitle}\nStatus: ${prettyOrderStatus(item.status)}\nBuyer: ${
         item.buyerName || item.buyerEmail || '-'
+      }\nDelivery step: ${prettyOrderStatus(item.deliveryStatusTag || '-')}\nRemark: ${
+        item.deliveryNote || '-'
       }\nPaycheck: ${formatInr(item.paycheckAmount || 0)} (${item.paycheckStatus || 'pending'})`
     );
     return;
@@ -824,15 +890,36 @@ el('deliveryOrdersList')?.addEventListener('click', async (event) => {
   if (!statusBtn) return;
   const orderId = Number(statusBtn.dataset.id);
   const nextStatus = String(statusBtn.dataset.status || '').trim();
+  const statusTag = String(statusBtn.dataset.tag || '').trim();
   if (!orderId || !nextStatus) return;
+  const remark = promptDeliveryRemark('');
+  if (remark === null) return;
   try {
     setText('deliveryOrdersStatus', `Updating order #${orderId}...`);
-    const payload = await api.updateOrderStatus(orderId, nextStatus);
+    const payload = await api.updateOrderStatus(orderId, nextStatus, {
+      ...(statusTag ? { tag: statusTag } : {}),
+      ...(remark ? { note: remark } : {})
+    });
     const updatedOrder = payload?.order || null;
+    const linkedJob =
+      currentWorkJobs.find((item) => Number(item.orderId) === Number(orderId)) ||
+      currentJobs.find((item) => Number(item.orderId) === Number(orderId));
+    if (linkedJob) {
+      let mappedJobStatus = '';
+      if (statusTag === 'picked_up') mappedJobStatus = 'picked';
+      if (statusTag === 'in_transit') mappedJobStatus = 'in_transit';
+      if (statusTag === 'on_the_way') mappedJobStatus = 'on_the_way';
+      if (nextStatus === 'delivered') mappedJobStatus = 'delivered';
+      if (mappedJobStatus) {
+        await api.updateDeliveryJobStatus(linkedJob.id, mappedJobStatus, remark).catch(() => null);
+      }
+    }
     if (updatedOrder?.status === 'delivered') {
-      const workJob = currentWorkJobs.find((item) => Number(item.listingId) === Number(updatedOrder.listingId));
+      const workJob =
+        currentWorkJobs.find((item) => Number(item.orderId) === Number(updatedOrder.id)) ||
+        currentWorkJobs.find((item) => Number(item.listingId) === Number(updatedOrder.listingId));
       if (workJob) {
-        await api.updateDeliveryJobStatus(workJob.id, 'completed').catch(() => null);
+        await api.updateDeliveryJobStatus(workJob.id, 'delivered', remark).catch(() => null);
       }
       if (updatedOrder.paycheckStatus === 'released') {
         setText(

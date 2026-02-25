@@ -1011,6 +1011,12 @@ body {
   background: linear-gradient(150deg, #ffffff, #f6fbff);
 }
 
+.rating-modal-card {
+  width: min(560px, 96vw);
+  border: 1px solid #cdddfd;
+  background: linear-gradient(150deg, #ffffff, #f7fbff);
+}
+
 .order-success-head {
   border: 1px solid #d4e4ff;
   border-radius: 12px;

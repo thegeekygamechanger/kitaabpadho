@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS delivery_jobs (
   pickup_latitude DOUBLE PRECISION,
   pickup_longitude DOUBLE PRECISION,
   delivery_mode TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','claimed','picked','on_the_way','delivered','rejected','completed','cancelled')),
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','claimed','picked','in_transit','on_the_way','delivered','rejected','completed','cancelled')),
   created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
   claimed_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -211,6 +211,9 @@ CREATE TABLE IF NOT EXISTS marketplace_orders (
   seller_note TEXT NOT NULL DEFAULT '',
   delivery_status_tag TEXT NOT NULL DEFAULT '',
   delivery_note TEXT NOT NULL DEFAULT '',
+  buyer_rating SMALLINT CHECK (buyer_rating BETWEEN 1 AND 5),
+  buyer_rating_remark TEXT NOT NULL DEFAULT '',
+  buyer_rated_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

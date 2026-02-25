@@ -728,6 +728,21 @@ function createRepository(queryFn) {
       return result.rows[0]?.total || 0;
     },
 
+    async deleteProjectAction(actionId) {
+      const result = await run(
+        `DELETE FROM project_actions
+         WHERE id = $1
+         RETURNING
+          id,
+          action_type AS "actionType",
+          entity_type AS "entityType",
+          entity_id AS "entityId",
+          summary`,
+        [actionId]
+      );
+      return result.rows[0] || null;
+    },
+
     async getAdminSummary() {
       const result = await run(
         `SELECT
@@ -2020,7 +2035,7 @@ function createRepository(queryFn) {
           dj.updated_at AS "updatedAt"
          FROM delivery_jobs dj
          WHERE dj.order_id = $1
-           AND dj.status IN ('open', 'claimed', 'picked', 'on_the_way')
+           AND dj.status IN ('open', 'claimed', 'picked', 'in_transit', 'on_the_way')
          ORDER BY dj.updated_at DESC
          LIMIT 1`,
         [orderId]
@@ -2082,7 +2097,9 @@ function createRepository(queryFn) {
           sin(radians($${latParam})) * sin(radians(dj.pickup_latitude))
         ))))`;
         values.push(radiusKm);
-        where.push(`dj.pickup_latitude IS NOT NULL AND dj.pickup_longitude IS NOT NULL AND ${distanceSql} <= $${values.length}`);
+        where.push(
+          `(dj.pickup_latitude IS NULL OR dj.pickup_longitude IS NULL OR ${distanceSql} <= $${values.length})`
+        );
       }
 
       const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -2320,6 +2337,13 @@ function createRepository(queryFn) {
           mo.buyer_city AS "buyerCity",
           mo.buyer_area_code AS "buyerAreaCode",
           mo.notes,
+          mo.seller_status_tag AS "sellerStatusTag",
+          mo.seller_note AS "sellerNote",
+          mo.delivery_status_tag AS "deliveryStatusTag",
+          mo.delivery_note AS "deliveryNote",
+          mo.buyer_rating AS "buyerRating",
+          mo.buyer_rating_remark AS "buyerRatingRemark",
+          mo.buyer_rated_at AS "buyerRatedAt",
           mo.payment_gateway AS "paymentGateway",
           mo.payment_gateway_order_id AS "paymentGatewayOrderId",
           mo.created_at AS "createdAt",
@@ -2389,6 +2413,13 @@ function createRepository(queryFn) {
           mo.buyer_city AS "buyerCity",
           mo.buyer_area_code AS "buyerAreaCode",
           mo.notes,
+          mo.seller_status_tag AS "sellerStatusTag",
+          mo.seller_note AS "sellerNote",
+          mo.delivery_status_tag AS "deliveryStatusTag",
+          mo.delivery_note AS "deliveryNote",
+          mo.buyer_rating AS "buyerRating",
+          mo.buyer_rating_remark AS "buyerRatingRemark",
+          mo.buyer_rated_at AS "buyerRatedAt",
           mo.payment_gateway AS "paymentGateway",
           mo.payment_gateway_order_id AS "paymentGatewayOrderId",
           mo.created_at AS "createdAt",
@@ -2457,6 +2488,13 @@ function createRepository(queryFn) {
           mo.buyer_city AS "buyerCity",
           mo.buyer_area_code AS "buyerAreaCode",
           mo.notes,
+          mo.seller_status_tag AS "sellerStatusTag",
+          mo.seller_note AS "sellerNote",
+          mo.delivery_status_tag AS "deliveryStatusTag",
+          mo.delivery_note AS "deliveryNote",
+          mo.buyer_rating AS "buyerRating",
+          mo.buyer_rating_remark AS "buyerRatingRemark",
+          mo.buyer_rated_at AS "buyerRatedAt",
           mo.payment_gateway AS "paymentGateway",
           mo.payment_gateway_order_id AS "paymentGatewayOrderId",
           mo.created_at AS "createdAt",
@@ -2536,6 +2574,13 @@ function createRepository(queryFn) {
           mo.buyer_city AS "buyerCity",
           mo.buyer_area_code AS "buyerAreaCode",
           mo.notes,
+          mo.seller_status_tag AS "sellerStatusTag",
+          mo.seller_note AS "sellerNote",
+          mo.delivery_status_tag AS "deliveryStatusTag",
+          mo.delivery_note AS "deliveryNote",
+          mo.buyer_rating AS "buyerRating",
+          mo.buyer_rating_remark AS "buyerRatingRemark",
+          mo.buyer_rated_at AS "buyerRatedAt",
           mo.payment_gateway AS "paymentGateway",
           mo.payment_gateway_order_id AS "paymentGatewayOrderId",
           mo.created_at AS "createdAt",
@@ -2591,7 +2636,9 @@ function createRepository(queryFn) {
       actorId,
       isAdmin = false,
       allowSeller = false,
-      allowDelivery = false
+      allowDelivery = false,
+      statusTag = null,
+      statusNote = null
     }) {
       const result = await run(
         `UPDATE marketplace_orders mo
@@ -2604,6 +2651,22 @@ function createRepository(queryFn) {
           paycheck_status = CASE
             WHEN $6::boolean AND $4 = 'delivered' THEN 'released'
             ELSE mo.paycheck_status
+          END,
+          seller_status_tag = CASE
+            WHEN $3::boolean AND $7::text IS NOT NULL THEN $7::text
+            ELSE mo.seller_status_tag
+          END,
+          seller_note = CASE
+            WHEN $3::boolean AND $8::text IS NOT NULL THEN $8::text
+            ELSE mo.seller_note
+          END,
+          delivery_status_tag = CASE
+            WHEN $6::boolean AND $7::text IS NOT NULL THEN $7::text
+            ELSE mo.delivery_status_tag
+          END,
+          delivery_note = CASE
+            WHEN $6::boolean AND $8::text IS NOT NULL THEN $8::text
+            ELSE mo.delivery_note
           END,
           updated_at = NOW()
          WHERE mo.id = $1
@@ -2623,7 +2686,7 @@ function createRepository(queryFn) {
              )
            )
          RETURNING mo.id`,
-        [orderId, Boolean(isAdmin), Boolean(allowSeller), status, actorId, Boolean(allowDelivery)]
+        [orderId, Boolean(isAdmin), Boolean(allowSeller), status, actorId, Boolean(allowDelivery), statusTag, statusNote]
       );
       if (!result.rows[0]?.id) return null;
       return this.getMarketplaceOrderById(result.rows[0].id);
@@ -2645,6 +2708,23 @@ function createRepository(queryFn) {
          WHERE id = $1
          RETURNING id`,
         [orderId, paymentState, paymentGateway || '', paymentGatewayOrderId || '']
+      );
+      if (!result.rows[0]?.id) return null;
+      return this.getMarketplaceOrderById(result.rows[0].id);
+    },
+
+    async rateMarketplaceOrder({ orderId, buyerId, rating, remark = '', isAdmin = false }) {
+      const result = await run(
+        `UPDATE marketplace_orders mo
+         SET
+          buyer_rating = $4,
+          buyer_rating_remark = $5,
+          buyer_rated_at = NOW(),
+          updated_at = NOW()
+         WHERE mo.id = $1
+           AND ($2::boolean OR mo.buyer_id = $3)
+         RETURNING mo.id`,
+        [orderId, Boolean(isAdmin), buyerId, rating, remark]
       );
       if (!result.rows[0]?.id) return null;
       return this.getMarketplaceOrderById(result.rows[0].id);
