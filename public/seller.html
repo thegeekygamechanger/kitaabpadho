@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f6fe5" />
     <title>&#x1F4DA; Seller Portal | KitaabPadho</title>
     <link rel="icon" type="image/svg+xml" href="/assets/icons/bookish.svg" />
-    <link rel="stylesheet" href="/assets/css/app.css?v=20260226f" />
+    <link rel="stylesheet" href="/assets/css/app.css?v=20260226h" />
   </head>
   <body>
     <header class="kb-header">
@@ -44,7 +44,8 @@
           <form id="sellerLoginForm" class="drawer">
             <h3>Login</h3>
             <input class="kb-input" name="email" type="email" placeholder="Email" required />
-            <input class="kb-input" name="password" type="password" placeholder="Password" required />
+            <input class="kb-input" name="password" type="password" placeholder="Password (optional if using TOTP)" />
+            <input class="kb-input" name="totpCode" placeholder="TOTP code (optional)" />
             <button class="kb-btn kb-btn-primary" type="submit">Login</button>
           </form>
           <form id="sellerSignupForm" class="drawer">
@@ -172,6 +173,7 @@
         <div class="panel-head">
           <h2>Seller Profile</h2>
         </div>
+        <p id="sellerProfileSummary" class="muted">Login to manage seller profile and TOTP.</p>
         <form id="sellerProfileForm" class="drawer" style="max-width:520px">
           <input class="kb-input" name="fullName" placeholder="Full name" required />
           <input class="kb-input" name="email" type="email" placeholder="Email" readonly />
@@ -185,6 +187,22 @@
           <button class="kb-btn kb-btn-dark" type="submit">Change Password</button>
           <p id="sellerPasswordStatus" class="muted"></p>
         </form>
+        <div class="drawer" style="max-width:520px">
+          <h3>TOTP (Authenticator App)</h3>
+          <p class="muted">Enable two-factor auth for seller account login.</p>
+          <div class="drawer-actions">
+            <button id="sellerTotpSetupBtn" class="kb-btn kb-btn-primary" type="button">Generate TOTP Secret</button>
+          </div>
+          <p id="sellerTotpSecretView" class="muted"></p>
+          <form id="sellerTotpEnableForm" style="display:grid;gap:0.5rem;margin-top:0.5rem">
+            <input name="code" class="kb-input" placeholder="Enter 6-digit code" required />
+            <div class="drawer-actions">
+              <button class="kb-btn kb-btn-dark" type="submit">Enable TOTP</button>
+              <button id="sellerTotpDisableBtn" class="kb-btn kb-btn-ghost" type="button">Disable TOTP</button>
+            </div>
+          </form>
+          <p id="sellerTotpStatus" class="muted"></p>
+        </div>
       </section>
 
       <section id="sellerBannerPanel" class="panel hidden">
@@ -238,9 +256,11 @@
       <p>Made by UPSC aspirant. Built for learners across India. KitaabPadhoIndia. @2026 copyright</p>
     </footer>
 
-    <script type="module" src="/assets/js/seller.js?v=20260226f"></script>
+    <script type="module" src="/assets/js/seller.js?v=20260226h"></script>
   </body>
 </html>
+
+
 
 
 

@@ -100,6 +100,8 @@ export function initMarketplace({ state, openAuthModal }) {
   const applyListingFiltersBtn = el('applyListingFiltersBtn');
   const closeListingDetailBtn = el('closeListingDetailBtn');
   const listingDetailContent = el('listingDetailContent');
+  const orderSuccessContent = el('orderSuccessContent');
+  const closeOrderSuccessBtn = el('closeOrderSuccessBtn');
 
   let currentListing = null;
   let geoCityOptions = [];
@@ -109,6 +111,7 @@ export function initMarketplace({ state, openAuthModal }) {
   let checkoutPaymentMode = 'cod';
   let checkoutStatus = '';
   let checkoutOrder = null;
+  let focusCheckoutOnOpen = false;
 
   function canManageListing(listing) {
     if (!state.user || !listing) return false;
@@ -291,7 +294,7 @@ export function initMarketplace({ state, openAuthModal }) {
           <p class="muted">Delivery: ${escapeHtml(listing.deliveryMode || 'peer_to_peer')} | Payments: ${escapeHtml(prettyPaymentModes(paymentModes))}</p>
           <p class="listing-detail-description">${escapeHtml(listing.description || '')}</p>
 
-          <section class="checkout-box">
+          <section id="listingCheckoutBox" class="checkout-box">
             <h4>${actionLabel} Checkout</h4>
             <div class="checkout-grid">
               <label class="field-label" for="checkoutQtyInput">Quantity</label>
@@ -333,6 +336,12 @@ export function initMarketplace({ state, openAuthModal }) {
       </article>
     `;
     showModal('listingDetailModal');
+    if (focusCheckoutOnOpen) {
+      focusCheckoutOnOpen = false;
+      requestAnimationFrame(() => {
+        document.getElementById('listingCheckoutBox')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
   }
 
   function renderListings(items) {
@@ -363,8 +372,8 @@ export function initMarketplace({ state, openAuthModal }) {
             <div class="card-price">${formatInr(item.price)}</div>
             <p class="muted">${escapeHtml(String(item.description || '').slice(0, 90))}</p>
             <div class="card-actions">
-              <button class="kb-btn kb-btn-primary view-listing-btn" type="button" data-id="${item.id}">${primaryActionLabel(item.listingType)}</button>
-              <button class="kb-btn kb-btn-dark view-listing-btn" type="button" data-id="${item.id}">View Details</button>
+              <button class="kb-btn kb-btn-primary view-listing-btn" type="button" data-id="${item.id}" data-open="checkout">${primaryActionLabel(item.listingType)}</button>
+              <button class="kb-btn kb-btn-dark view-listing-btn" type="button" data-id="${item.id}" data-open="details">View Details</button>
             </div>
           </div>
         </article>`;
@@ -383,7 +392,7 @@ export function initMarketplace({ state, openAuthModal }) {
     }
   }
 
-  async function openListingDetails(listingId) {
+  async function openListingDetails(listingId, { focusCheckout = false } = {}) {
     try {
       const listing = await api.listingById(listingId);
       currentListing = listing;
@@ -391,6 +400,7 @@ export function initMarketplace({ state, openAuthModal }) {
       checkoutQuantity = 1;
       checkoutStatus = '';
       checkoutOrder = null;
+      focusCheckoutOnOpen = Boolean(focusCheckout);
       const modes = normalizePaymentModes(listing.paymentModes);
       checkoutPaymentMode = modes.includes('cod') ? 'cod' : modes[0];
       renderListingDetail();
@@ -436,8 +446,52 @@ export function initMarketplace({ state, openAuthModal }) {
     if (!(target instanceof HTMLElement)) return;
     const button = target.closest('.view-listing-btn');
     if (!button) return;
-    openListingDetails(button.dataset.id);
+    openListingDetails(button.dataset.id, { focusCheckout: String(button.dataset.open || '') === 'checkout' });
   });
+
+  async function ensureAuthedForOrder() {
+    if (state.user?.id) return true;
+    try {
+      const me = await api.authMe();
+      if (me?.authenticated && me?.user?.id) {
+        state.user = me.user;
+        return true;
+      }
+    } catch {
+      // fall through
+    }
+    return false;
+  }
+
+  function showOrderSuccessModal({ order, listing, onlineSelected }) {
+    if (!orderSuccessContent || !order) return;
+    const actionLabel = String(order.actionKind || listing?.listingType || 'buy').toUpperCase();
+    const onlineMessage = onlineSelected
+      ? 'Online payment selected. Complete payment in Orders tab at final step.'
+      : 'Cash on Delivery selected. Seller received your order request.';
+    orderSuccessContent.innerHTML = `
+      <div class="order-success-head">
+        <p class="order-success-kicker">Order Sent Successfully</p>
+        <h3>${escapeHtml(actionLabel)} order #${escapeHtml(String(order.id))} placed</h3>
+      </div>
+      <p class="muted">Item: ${escapeHtml(order.listingTitle || listing?.title || 'Listing')}</p>
+      <p class="muted">Seller has received this request and can start processing now.</p>
+      <div class="order-success-summary">
+        <span>Total: ${formatInr(order.payableTotal || order.totalPrice || 0)}</span>
+        <span>Status: ${escapeHtml(String(order.status || 'received').replaceAll('_', ' '))}</span>
+      </div>
+      <p class="muted">${escapeHtml(onlineMessage)}</p>
+      <div class="drawer-actions">
+        <button class="kb-btn kb-btn-primary order-success-view-orders-btn" type="button">View Orders</button>
+        <button class="kb-btn kb-btn-ghost order-success-continue-btn" type="button">Continue Browsing</button>
+      </div>
+    `;
+    showModal('orderSuccessModal');
+  }
+
+  function hideOrderSuccessModal() {
+    hideModal('orderSuccessModal');
+  }
 
   listingDetailContent?.addEventListener('change', (event) => {
     const target = event.target;
@@ -477,13 +531,16 @@ export function initMarketplace({ state, openAuthModal }) {
 
     const placeOrderBtn = target.closest('.place-order-btn');
     if (placeOrderBtn) {
-      if (!state.user?.id) {
+      const authed = await ensureAuthedForOrder();
+      if (!authed) {
         openAuthModal?.('Login required to place order.');
         return;
       }
       if (!currentListing) return;
+      const action = currentListing.listingType === 'rent' ? 'rent' : 'buy';
       const payload = {
         listingId: currentListing.id,
+        action,
         quantity: checkoutQuantity,
         paymentMode: checkoutPaymentMode,
         buyerLat: state.location?.coords?.lat,
@@ -496,12 +553,13 @@ export function initMarketplace({ state, openAuthModal }) {
       try {
         const result = await api.createMarketplaceOrder(payload);
         checkoutOrder = result.order || null;
+        const onlineSelected = ONLINE_PAYMENT_MODES.has(checkoutPaymentMode);
         checkoutStatus = checkoutOrder
           ? `Order #${checkoutOrder.id} placed successfully.`
           : 'Order placed successfully.';
         window.dispatchEvent(new CustomEvent('kp:orders:refresh'));
-        if (!ONLINE_PAYMENT_MODES.has(checkoutPaymentMode)) {
-          window.location.hash = '#ordersPanel';
+        if (checkoutOrder) {
+          showOrderSuccessModal({ order: checkoutOrder, listing: currentListing, onlineSelected });
         }
         renderListingDetail();
       } catch (error) {
@@ -607,6 +665,24 @@ export function initMarketplace({ state, openAuthModal }) {
     checkoutOrder = null;
     checkoutStatus = '';
     hideModal('listingDetailModal');
+  });
+
+  closeOrderSuccessBtn?.addEventListener('click', () => {
+    hideOrderSuccessModal();
+  });
+
+  orderSuccessContent?.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.closest('.order-success-view-orders-btn')) {
+      hideOrderSuccessModal();
+      window.location.hash = '#ordersPanel';
+      window.dispatchEvent(new CustomEvent('kp:orders:refresh'));
+      return;
+    }
+    if (target.closest('.order-success-continue-btn')) {
+      hideOrderSuccessModal();
+    }
   });
 
   syncControlsFromState();

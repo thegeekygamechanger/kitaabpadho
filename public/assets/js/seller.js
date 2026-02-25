@@ -132,7 +132,7 @@ function syncPortalVisibility() {
   const loginVisible = !portalAccess;
 
   const logoutBtn = el('sellerLogoutBtn');
-  if (logoutBtn) logoutBtn.hidden = !loggedIn;
+  if (logoutBtn) logoutBtn.hidden = !portalAccess;
   el('sellerPortalNav')?.classList.toggle('hidden', !portalAccess);
 
   el('sellerWorkspaceNav')?.classList.toggle('hidden', !sellerRole);
@@ -318,10 +318,19 @@ function renderSellerOrders(items) {
 
 function renderSellerProfile() {
   const form = el('sellerProfileForm');
-  if (!form || !currentUser || !isSellerAccount()) return;
+  if (!form || !currentUser || !isSellerAccount()) {
+    setText('sellerProfileSummary', 'Login to manage seller profile and TOTP.');
+    return;
+  }
   if (form.fullName) form.fullName.value = currentUser.fullName || '';
   if (form.email) form.email.value = currentUser.email || '';
   if (form.phoneNumber) form.phoneNumber.value = currentUser.phoneNumber || '';
+  setText(
+    'sellerProfileSummary',
+    `${currentUser.fullName || ''} | ${currentUser.email || ''} | role: ${currentUser.role || 'seller'} | TOTP: ${
+      currentUser.totpEnabled ? 'enabled' : 'disabled'
+    }`
+  );
 }
 
 function setCityOptions(cities = []) {
@@ -540,12 +549,18 @@ function connectRealtime() {
 el('sellerLoginForm')?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
+  const password = String(form.password?.value || '');
+  const totpCode = String(form.totpCode?.value || '').trim();
+  if (!password && !totpCode) {
+    setText('sellerAuthStatus', 'Enter password or TOTP code to login.');
+    return;
+  }
   setText('sellerAuthStatus', 'Logging in...');
   try {
-    await api.authLogin({
-      email: form.email.value.trim(),
-      password: form.password.value
-    });
+    const payload = { email: form.email.value.trim() };
+    if (password) payload.password = password;
+    if (totpCode) payload.totpCode = totpCode;
+    await api.authLogin(payload);
     form.reset();
     await refreshAuth();
     if (!isSellerAccount() && currentUser?.role !== 'admin') {
@@ -720,6 +735,69 @@ el('sellerPasswordForm')?.addEventListener('submit', async (event) => {
     }
   } catch (error) {
     setText('sellerPasswordStatus', error.message || 'Unable to change password');
+  }
+});
+
+el('sellerTotpSetupBtn')?.addEventListener('click', async () => {
+  if (!isSellerAccount()) {
+    setText('sellerTotpStatus', 'Seller login required.');
+    return;
+  }
+  setText('sellerTotpStatus', 'Generating TOTP secret...');
+  try {
+    const data = await api.setupTotp();
+    setText(
+      'sellerTotpSecretView',
+      `Secret: ${data.secret} | Account: ${data.accountName} | Issuer: ${data.issuer}`
+    );
+    setText('sellerTotpStatus', 'Secret generated. Add it in authenticator and verify below.');
+  } catch (error) {
+    setText('sellerTotpStatus', error.message || 'Unable to setup TOTP');
+  }
+});
+
+el('sellerTotpEnableForm')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!isSellerAccount()) {
+    setText('sellerTotpStatus', 'Seller login required.');
+    return;
+  }
+  const form = event.currentTarget;
+  setText('sellerTotpStatus', 'Enabling TOTP...');
+  try {
+    const result = await api.enableTotp(String(form.code?.value || '').trim());
+    currentUser = result.user || currentUser;
+    setText('sellerAuthBadge', currentUser ? `${currentUser.fullName} (${currentUser.email})` : 'Guest');
+    renderSellerProfile();
+    form.reset();
+    setText('sellerTotpStatus', 'TOTP enabled.');
+  } catch (error) {
+    setText('sellerTotpStatus', error.message || 'Unable to enable TOTP');
+  }
+});
+
+el('sellerTotpDisableBtn')?.addEventListener('click', async () => {
+  if (!isSellerAccount()) {
+    setText('sellerTotpStatus', 'Seller login required.');
+    return;
+  }
+  const currentPassword = window.prompt('Enter current password (or leave blank to use TOTP code):') || '';
+  let totpCode = '';
+  if (!currentPassword) {
+    totpCode = window.prompt('Enter 6-digit TOTP code:') || '';
+  }
+  setText('sellerTotpStatus', 'Disabling TOTP...');
+  try {
+    const result = await api.disableTotp({
+      currentPassword: currentPassword || undefined,
+      totpCode: totpCode || undefined
+    });
+    currentUser = result.user || currentUser;
+    setText('sellerAuthBadge', currentUser ? `${currentUser.fullName} (${currentUser.email})` : 'Guest');
+    renderSellerProfile();
+    setText('sellerTotpStatus', 'TOTP disabled.');
+  } catch (error) {
+    setText('sellerTotpStatus', error.message || 'Unable to disable TOTP');
   }
 });
 

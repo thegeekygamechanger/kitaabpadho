@@ -1001,6 +1001,44 @@ body {
   width: min(420px, 96vw);
 }
 
+.order-success-modal-card {
+  width: min(560px, 96vw);
+  border: 1px solid #cdddfd;
+  background: linear-gradient(150deg, #ffffff, #f6fbff);
+}
+
+.order-success-head {
+  border: 1px solid #d4e4ff;
+  border-radius: 12px;
+  padding: 0.75rem;
+  background: linear-gradient(140deg, #f1f8ff, #fff6de);
+}
+
+.order-success-head h3 {
+  margin: 0.2rem 0 0;
+  color: #112f63;
+  font-size: 1.28rem;
+}
+
+.order-success-kicker {
+  margin: 0;
+  color: #2462c6;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.78rem;
+}
+
+.order-success-summary {
+  border: 1px dashed #c7dbff;
+  border-radius: 10px;
+  padding: 0.55rem 0.65rem;
+  display: grid;
+  gap: 0.25rem;
+  color: #1b3d79;
+  font-weight: 700;
+}
+
 .update-later-btn {
   color: #17356f;
   border-color: #c5d7ff;

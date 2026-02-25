@@ -90,10 +90,9 @@ function syncTabView() {
 
 function syncPortalVisibility() {
   const deliveryRole = isDeliveryAccount();
-  const loggedIn = Boolean(currentUser);
   const loginVisible = !deliveryRole;
   const logoutBtn = el('deliveryLogoutBtn');
-  if (logoutBtn) logoutBtn.hidden = !loggedIn;
+  if (logoutBtn) logoutBtn.hidden = !deliveryRole;
   el('deliveryPortalNav')?.classList.toggle('hidden', !deliveryRole);
   el('deliveryJobsNav')?.classList.toggle('hidden', !deliveryRole);
   el('deliveryWorkNav')?.classList.toggle('hidden', !deliveryRole);
@@ -282,10 +281,19 @@ function renderDeliveryOrders(items) {
 
 function renderDeliveryProfile() {
   const form = el('deliveryProfileForm');
-  if (!form || !currentUser || !isDeliveryAccount()) return;
+  if (!form || !currentUser || !isDeliveryAccount()) {
+    setText('deliveryProfileSummary', 'Login to manage delivery profile and TOTP.');
+    return;
+  }
   if (form.fullName) form.fullName.value = currentUser.fullName || '';
   if (form.email) form.email.value = currentUser.email || '';
   if (form.phoneNumber) form.phoneNumber.value = currentUser.phoneNumber || '';
+  setText(
+    'deliveryProfileSummary',
+    `${currentUser.fullName || ''} | ${currentUser.email || ''} | role: ${currentUser.role || 'delivery'} | TOTP: ${
+      currentUser.totpEnabled ? 'enabled' : 'disabled'
+    }`
+  );
 }
 
 function buildBaseFilters() {
@@ -439,12 +447,18 @@ function connectRealtime() {
 el('deliveryLoginForm')?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
+  const password = String(form.password?.value || '');
+  const totpCode = String(form.totpCode?.value || '').trim();
+  if (!password && !totpCode) {
+    setText('deliveryStatus', 'Enter password or TOTP code to login.');
+    return;
+  }
   setText('deliveryStatus', 'Logging in...');
   try {
-    await api.authLogin({
-      email: form.email.value.trim(),
-      password: form.password.value
-    });
+    const payload = { email: form.email.value.trim() };
+    if (password) payload.password = password;
+    if (totpCode) payload.totpCode = totpCode;
+    await api.authLogin(payload);
     form.reset();
     await refreshAuth();
     if (!isDeliveryAccount()) {
@@ -564,6 +578,69 @@ el('deliveryPasswordForm')?.addEventListener('submit', async (event) => {
     }
   } catch (error) {
     setText('deliveryPasswordStatus', error.message || 'Unable to change password');
+  }
+});
+
+el('deliveryTotpSetupBtn')?.addEventListener('click', async () => {
+  if (!isDeliveryAccount()) {
+    setText('deliveryTotpStatus', 'Delivery login required.');
+    return;
+  }
+  setText('deliveryTotpStatus', 'Generating TOTP secret...');
+  try {
+    const data = await api.setupTotp();
+    setText(
+      'deliveryTotpSecretView',
+      `Secret: ${data.secret} | Account: ${data.accountName} | Issuer: ${data.issuer}`
+    );
+    setText('deliveryTotpStatus', 'Secret generated. Add it in authenticator and verify below.');
+  } catch (error) {
+    setText('deliveryTotpStatus', error.message || 'Unable to setup TOTP');
+  }
+});
+
+el('deliveryTotpEnableForm')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!isDeliveryAccount()) {
+    setText('deliveryTotpStatus', 'Delivery login required.');
+    return;
+  }
+  const form = event.currentTarget;
+  setText('deliveryTotpStatus', 'Enabling TOTP...');
+  try {
+    const result = await api.enableTotp(String(form.code?.value || '').trim());
+    currentUser = result.user || currentUser;
+    setText('deliveryAuthBadge', currentUser ? `${currentUser.fullName} (${currentUser.email})` : 'Guest');
+    renderDeliveryProfile();
+    form.reset();
+    setText('deliveryTotpStatus', 'TOTP enabled.');
+  } catch (error) {
+    setText('deliveryTotpStatus', error.message || 'Unable to enable TOTP');
+  }
+});
+
+el('deliveryTotpDisableBtn')?.addEventListener('click', async () => {
+  if (!isDeliveryAccount()) {
+    setText('deliveryTotpStatus', 'Delivery login required.');
+    return;
+  }
+  const currentPassword = window.prompt('Enter current password (or leave blank to use TOTP code):') || '';
+  let totpCode = '';
+  if (!currentPassword) {
+    totpCode = window.prompt('Enter 6-digit TOTP code:') || '';
+  }
+  setText('deliveryTotpStatus', 'Disabling TOTP...');
+  try {
+    const result = await api.disableTotp({
+      currentPassword: currentPassword || undefined,
+      totpCode: totpCode || undefined
+    });
+    currentUser = result.user || currentUser;
+    setText('deliveryAuthBadge', currentUser ? `${currentUser.fullName} (${currentUser.email})` : 'Guest');
+    renderDeliveryProfile();
+    setText('deliveryTotpStatus', 'TOTP disabled.');
+  } catch (error) {
+    setText('deliveryTotpStatus', error.message || 'Unable to disable TOTP');
   }
 });
 
