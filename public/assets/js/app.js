@@ -24,6 +24,11 @@ function wireModalDismiss() {
 }
 
 function boot() {
+  try {
+    localStorage.setItem('kp_active_portal', 'client');
+  } catch {
+    // ignore storage restrictions
+  }
   initFormEnhancements();
   let auth;
   const viewIds = ['marketplace', 'community', 'ai', 'notificationsPanel', 'profilePanel', 'supportPanel'];
@@ -62,7 +67,7 @@ function boot() {
     }
   }
 
-  function syncTabView() {
+  function syncTabView({ promptForAuth = true } = {}) {
     const rawTarget = String(window.location.hash || '#marketplace').replace('#', '');
     const requested = viewIds.includes(rawTarget) ? rawTarget : 'marketplace';
     const blockedForGuest = !state.user && gatedGuestViews.includes(requested);
@@ -70,6 +75,8 @@ function boot() {
 
     const hero = el('heroSection');
     if (hero) hero.classList.toggle('view-hidden', target !== 'marketplace');
+    const promo = el('promoBannerSection');
+    if (promo) promo.classList.toggle('view-hidden', target !== 'marketplace');
 
     for (const id of viewIds) {
       const section = el(id);
@@ -86,7 +93,7 @@ function boot() {
 
     if (requested !== target) {
       window.history.replaceState(null, '', `#${target}`);
-      if (blockedForGuest) {
+      if (blockedForGuest && promptForAuth) {
         auth?.openAuthModal?.('Login / Signup to access Community, Ask PadhAI, and notifications.');
       }
     }
@@ -146,7 +153,7 @@ function boot() {
         feedback.onAuthChanged(),
         realtime.onAuthChanged()
       ]);
-      syncTabView();
+      syncTabView({ promptForAuth: false });
       syncGuestPromptWatch();
     }
   });
@@ -173,14 +180,15 @@ function boot() {
   });
   initPwa();
   wireModalDismiss();
-  syncTabView();
-  window.addEventListener('hashchange', syncTabView);
+  syncTabView({ promptForAuth: false });
+  window.addEventListener('hashchange', () => syncTabView());
 
   el('globalSearchForm')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const query = el('globalSearchInput')?.value.trim() || '';
     marketplace.setSearchQuery(query);
-    await marketplace.refreshListings();
+    window.location.hash = '#marketplace';
+    await marketplace.refreshListings().catch(() => null);
     document.getElementById('marketplace')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 
@@ -206,7 +214,7 @@ function boot() {
         feedback.refreshMyFeedback(),
         realtime.onAuthChanged()
       ]);
-      syncTabView();
+      syncTabView({ promptForAuth: false });
       syncGuestPromptWatch();
     });
 

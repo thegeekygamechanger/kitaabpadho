@@ -49,6 +49,12 @@ body {
   padding: 0.75rem 1rem;
 }
 
+.kb-topbar .drawer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
 .kb-brand {
   color: #fff;
   text-decoration: none;
@@ -404,6 +410,7 @@ body {
   border: 1px solid var(--line);
   box-shadow: var(--shadow);
   padding: 1rem;
+  animation: riseIn 260ms ease-out;
 }
 
 .panel-head {
@@ -838,15 +845,22 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.85rem;
+  align-items: stretch;
 }
 
 .auth-grid form {
   display: grid;
   gap: 0.45rem;
+  align-content: start;
   padding: 0.75rem;
   border: 1px solid #d5e3ff;
   border-radius: 10px;
   background: #f8fbff;
+}
+
+.auth-grid h3,
+.auth-grid h4 {
+  min-height: 1.5rem;
 }
 
 .field-label {
@@ -1054,6 +1068,10 @@ body {
     grid-template-columns: 1fr 1fr;
   }
 
+  .kb-topbar .drawer-actions {
+    justify-content: flex-start;
+  }
+
   .admin-summary {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -1087,6 +1105,10 @@ body {
 
   .auth-grid {
     grid-template-columns: 1fr;
+  }
+
+  .kb-topbar .drawer-actions {
+    width: 100%;
   }
 }
 

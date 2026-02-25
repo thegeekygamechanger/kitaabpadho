@@ -37,6 +37,59 @@ const crudState = {
 };
 
 initFormEnhancements();
+try {
+  localStorage.setItem('kp_active_portal', 'admin');
+} catch {
+  // ignore storage restriction
+}
+
+const ADMIN_TAB_IDS = ['adminMainPanel', 'adminBannerPanel', 'adminSupportPanel'];
+const ADMIN_TAB_LINK_IDS = {
+  adminMainPanel: 'adminActionsNav',
+  adminBannerPanel: 'adminBannerNav',
+  adminSupportPanel: 'adminSupportNav'
+};
+
+function syncAdminTabs() {
+  const mainPanel = el('adminMainPanel');
+  const isAdminSession = Boolean(mainPanel && !mainPanel.classList.contains('hidden'));
+  const loginPanel = el('adminLoginPanel');
+  if (!isAdminSession) {
+    for (const id of ADMIN_TAB_IDS) {
+      el(id)?.classList.add('view-hidden');
+    }
+    loginPanel?.classList.remove('view-hidden');
+    for (const linkId of Object.values(ADMIN_TAB_LINK_IDS)) {
+      el(linkId)?.classList.remove('active');
+    }
+    return;
+  }
+
+  const available = ADMIN_TAB_IDS.filter((id) => {
+    const node = el(id);
+    return Boolean(node && !node.classList.contains('hidden'));
+  });
+  const rawHash = String(window.location.hash || '').replace('#', '');
+  const fallback = available[0] || 'adminMainPanel';
+  const target = available.includes(rawHash) ? rawHash : fallback;
+
+  loginPanel?.classList.add('view-hidden');
+  for (const id of ADMIN_TAB_IDS) {
+    const node = el(id);
+    if (!node) continue;
+    node.classList.toggle('view-hidden', id !== target || node.classList.contains('hidden'));
+  }
+
+  for (const [sectionId, linkId] of Object.entries(ADMIN_TAB_LINK_IDS)) {
+    const link = el(linkId);
+    if (!link) continue;
+    link.classList.toggle('active', sectionId === target);
+  }
+
+  if (rawHash !== target) {
+    window.history.replaceState(null, '', `#${target}`);
+  }
+}
 
 function renderSummary(summary) {
   const node = el('adminSummary');
@@ -492,6 +545,7 @@ async function checkAdminSession() {
     el('adminMainPanel')?.classList.toggle('hidden', !isAdmin);
     el('adminBannerPanel')?.classList.toggle('hidden', !isAdmin);
     el('adminSupportPanel')?.classList.toggle('hidden', !isAdmin);
+    syncAdminTabs();
     if (!me.authenticated) {
       setText('adminLoginStatus', 'Login with an admin account to open this panel.');
       setText('adminStatus', 'Admin login required.');
@@ -512,6 +566,7 @@ async function checkAdminSession() {
     el('adminMainPanel')?.classList.add('hidden');
     el('adminBannerPanel')?.classList.add('hidden');
     el('adminSupportPanel')?.classList.add('hidden');
+    syncAdminTabs();
     setText('adminLoginStatus', error.message || 'Unable to validate admin session.');
     setText('adminStatus', 'Unable to load admin panel.');
   }
@@ -632,5 +687,9 @@ setInterval(() => {
     Promise.all([refreshAdminData(), refreshCrudData(), refreshBannerData(), refreshFeedbackData()]).catch(() => null);
   }
 }, 20000);
+
+window.addEventListener('hashchange', () => {
+  syncAdminTabs();
+});
 
 checkAdminSession().catch(() => null);

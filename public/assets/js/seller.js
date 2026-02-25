@@ -32,6 +32,15 @@ let currentBanners = [];
 let locationOptions = [];
 let stream = null;
 let feedback = null;
+const PORTAL_KEY = 'kp_active_portal';
+const PORTAL_NAME = 'seller';
+const TAB_SECTION_IDS = ['sellerPostingPanel', 'sellerListingsPanel', 'sellerBannerPanel', 'sellerSupportPanel'];
+const TAB_LINK_IDS = {
+  sellerPostingPanel: 'sellerWorkspaceNav',
+  sellerListingsPanel: 'sellerWorkspaceNav',
+  sellerBannerPanel: 'sellerBannerNav',
+  sellerSupportPanel: 'sellerSupportNav'
+};
 
 initFormEnhancements();
 
@@ -57,19 +66,58 @@ function setSectionVisibility(id, visible) {
   el(id)?.classList.toggle('hidden', !visible);
 }
 
+function activeSellerTabIds() {
+  if (!currentUser) return [];
+  if (isSellerAccount()) return ['sellerPostingPanel', 'sellerListingsPanel', 'sellerBannerPanel', 'sellerSupportPanel'];
+  if (currentUser.role === 'admin') return ['sellerBannerPanel', 'sellerSupportPanel'];
+  return ['sellerSupportPanel'];
+}
+
+function syncTabView() {
+  const loginPanel = el('sellerLoginPanel');
+  const loginVisible = !loginPanel || !loginPanel.classList.contains('hidden');
+  const allowed = activeSellerTabIds().filter((id) => {
+    const section = el(id);
+    return Boolean(section && !section.classList.contains('hidden'));
+  });
+  const rawHash = String(window.location.hash || '').replace('#', '');
+  const fallback = allowed[0] || '';
+  const target = allowed.includes(rawHash) ? rawHash : fallback;
+
+  for (const id of TAB_SECTION_IDS) {
+    const section = el(id);
+    if (!section) continue;
+    const shouldShow = !loginVisible && id === target && !section.classList.contains('hidden');
+    section.classList.toggle('view-hidden', !shouldShow);
+  }
+  if (loginPanel) loginPanel.classList.toggle('view-hidden', !loginVisible);
+
+  for (const [sectionId, linkId] of Object.entries(TAB_LINK_IDS)) {
+    const link = el(linkId);
+    if (!link) continue;
+    link.classList.toggle('active', !loginVisible && sectionId === target);
+  }
+
+  if (!loginVisible && target && rawHash !== target) {
+    window.history.replaceState(null, '', `#${target}`);
+  }
+}
+
 function syncPortalVisibility() {
   const loggedIn = Boolean(currentUser);
   const sellerRole = isSellerAccount();
   const bannerRole = isBannerManager();
+  const loginVisible = !loggedIn || (!sellerRole && currentUser?.role !== 'admin');
 
   el('sellerWorkspaceNav')?.classList.toggle('hidden', !sellerRole);
   el('sellerBannerNav')?.classList.toggle('hidden', !bannerRole);
   el('sellerSupportNav')?.classList.toggle('hidden', !loggedIn);
-  setSectionVisibility('sellerLoginPanel', !loggedIn);
+  setSectionVisibility('sellerLoginPanel', loginVisible);
   setSectionVisibility('sellerPostingPanel', sellerRole);
   setSectionVisibility('sellerListingsPanel', sellerRole);
   setSectionVisibility('sellerBannerPanel', bannerRole);
   setSectionVisibility('sellerSupportPanel', loggedIn);
+  syncTabView();
 
   if (!loggedIn) {
     setText('sellerPortalHint', 'Login to post and manage your listings.');
@@ -84,6 +132,19 @@ function syncPortalVisibility() {
     return;
   }
   setText('sellerPortalHint', 'Seller workspace ready. Post, edit, and delete listings.');
+}
+
+async function handlePortalSwitchSession() {
+  let previousPortal = '';
+  try {
+    previousPortal = String(localStorage.getItem(PORTAL_KEY) || '');
+    localStorage.setItem(PORTAL_KEY, PORTAL_NAME);
+  } catch {
+    previousPortal = '';
+  }
+  if (previousPortal && previousPortal !== PORTAL_NAME) {
+    await api.authLogout().catch(() => null);
+  }
 }
 
 function renderListings(items) {
@@ -360,8 +421,11 @@ el('sellerLoginForm')?.addEventListener('submit', async (event) => {
     if (!isSellerAccount() && currentUser?.role !== 'admin') {
       setText('sellerAuthStatus', 'Login successful, but this account is not a seller account.');
       await refreshListings();
+      syncTabView();
       return;
     }
+    if (isSellerAccount()) window.location.hash = '#sellerPostingPanel';
+    if (currentUser?.role === 'admin') window.location.hash = '#sellerBannerPanel';
     setText('sellerAuthStatus', 'Seller login successful.');
     await refreshListings();
     await refreshBanners();
@@ -385,6 +449,7 @@ el('sellerSignupForm')?.addEventListener('submit', async (event) => {
     });
     form.reset();
     await refreshAuth();
+    window.location.hash = '#sellerPostingPanel';
     setText('sellerAuthStatus', 'Seller account created and logged in.');
     await refreshListings();
     await refreshBanners();
@@ -669,8 +734,12 @@ feedback = initFeedback({
 
 window.addEventListener('pointerdown', unlockNotificationSound, { once: true });
 window.addEventListener('keydown', unlockNotificationSound, { once: true });
+window.addEventListener('hashchange', () => {
+  syncTabView();
+});
 
-refreshAuth()
+handlePortalSwitchSession()
+  .then(() => refreshAuth())
   .then(async () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -683,5 +752,6 @@ refreshAuth()
     }
     await refreshListings();
     await refreshBanners();
+    syncTabView();
   })
   .catch(() => null);

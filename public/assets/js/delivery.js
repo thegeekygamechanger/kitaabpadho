@@ -18,6 +18,13 @@ let currentCoords = null;
 let currentJobs = [];
 let stream = null;
 let feedback = null;
+const PORTAL_KEY = 'kp_active_portal';
+const PORTAL_NAME = 'delivery';
+const TAB_SECTION_IDS = ['deliveryJobsPanel', 'deliverySupportPanel'];
+const TAB_LINK_IDS = {
+  deliveryJobsPanel: 'deliveryJobsNav',
+  deliverySupportPanel: 'deliverySupportNav'
+};
 
 initFormEnhancements();
 
@@ -35,13 +42,63 @@ function canManageJob(item) {
   );
 }
 
+function activeDeliveryTabIds() {
+  if (!currentUser || !isDeliveryAccount()) return [];
+  return ['deliveryJobsPanel', 'deliverySupportPanel'];
+}
+
+function syncTabView() {
+  const loginPanel = el('deliveryLoginPanel');
+  const loginVisible = !loginPanel || !loginPanel.classList.contains('hidden');
+  const allowed = activeDeliveryTabIds().filter((id) => {
+    const section = el(id);
+    return Boolean(section && !section.classList.contains('hidden'));
+  });
+  const rawHash = String(window.location.hash || '').replace('#', '');
+  const fallback = allowed[0] || '';
+  const target = allowed.includes(rawHash) ? rawHash : fallback;
+
+  for (const id of TAB_SECTION_IDS) {
+    const section = el(id);
+    if (!section) continue;
+    section.classList.toggle('view-hidden', !(id === target && !loginVisible && !section.classList.contains('hidden')));
+  }
+  if (loginPanel) loginPanel.classList.toggle('view-hidden', !loginVisible);
+
+  for (const [sectionId, linkId] of Object.entries(TAB_LINK_IDS)) {
+    const link = el(linkId);
+    if (!link) continue;
+    link.classList.toggle('active', !loginVisible && sectionId === target);
+  }
+
+  if (!loginVisible && target && rawHash !== target) {
+    window.history.replaceState(null, '', `#${target}`);
+  }
+}
+
 function syncPortalVisibility() {
+  const deliveryRole = isDeliveryAccount();
   const loggedIn = Boolean(currentUser);
-  el('deliveryJobsNav')?.classList.toggle('hidden', !loggedIn);
-  el('deliverySupportNav')?.classList.toggle('hidden', !loggedIn);
-  el('deliveryLoginPanel')?.classList.toggle('hidden', loggedIn);
-  el('deliveryJobsPanel')?.classList.toggle('hidden', !loggedIn);
-  el('deliverySupportPanel')?.classList.toggle('hidden', !loggedIn);
+  const loginVisible = !loggedIn || !deliveryRole;
+  el('deliveryJobsNav')?.classList.toggle('hidden', !deliveryRole);
+  el('deliverySupportNav')?.classList.toggle('hidden', !deliveryRole);
+  el('deliveryLoginPanel')?.classList.toggle('hidden', !loginVisible);
+  el('deliveryJobsPanel')?.classList.toggle('hidden', !deliveryRole);
+  el('deliverySupportPanel')?.classList.toggle('hidden', !deliveryRole);
+  syncTabView();
+}
+
+async function handlePortalSwitchSession() {
+  let previousPortal = '';
+  try {
+    previousPortal = String(localStorage.getItem(PORTAL_KEY) || '');
+    localStorage.setItem(PORTAL_KEY, PORTAL_NAME);
+  } catch {
+    previousPortal = '';
+  }
+  if (previousPortal && previousPortal !== PORTAL_NAME) {
+    await api.authLogout().catch(() => null);
+  }
 }
 
 function syncRoleHint() {
@@ -213,8 +270,10 @@ el('deliveryLoginForm')?.addEventListener('submit', async (event) => {
     await refreshAuth();
     if (!isDeliveryAccount()) {
       setText('deliveryStatus', 'Login successful, but this account is not a delivery account.');
+      syncTabView();
       return;
     }
+    window.location.hash = '#deliveryJobsPanel';
     setText('deliveryStatus', 'Delivery login successful.');
     await refreshJobs();
     unlockNotificationSound();
@@ -237,6 +296,7 @@ el('deliverySignupForm')?.addEventListener('submit', async (event) => {
     });
     form.reset();
     await refreshAuth();
+    window.location.hash = '#deliveryJobsPanel';
     setText('deliveryStatus', 'Delivery account created and logged in.');
     await refreshJobs();
     unlockNotificationSound();
@@ -367,8 +427,12 @@ feedback = initFeedback({
 
 window.addEventListener('pointerdown', unlockNotificationSound, { once: true });
 window.addEventListener('keydown', unlockNotificationSound, { once: true });
+window.addEventListener('hashchange', () => {
+  syncTabView();
+});
 
-refreshAuth()
+handlePortalSwitchSession()
+  .then(() => refreshAuth())
   .then(async () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -384,5 +448,6 @@ refreshAuth()
       );
     }
     await refreshJobs();
+    syncTabView();
   })
   .catch(() => null);
