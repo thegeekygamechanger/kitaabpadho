@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#163f86" />
     <title>&#x1F4DA; KitaabPadho Admin</title>
     <link rel="icon" type="image/svg+xml" href="/assets/icons/bookish.svg" />
-    <link rel="stylesheet" href="/assets/css/app.css?v=20260226d" />
+    <link rel="stylesheet" href="/assets/css/app.css?v=20260226f" />
   </head>
   <body>
     <header class="kb-header">
@@ -29,6 +29,7 @@
         <a id="adminActionsNav" class="active" href="#adminMainPanel">Admin Actions</a>
         <a id="adminBannerNav" href="#adminBannerPanel">Banners</a>
         <a id="adminSupportNav" href="#adminSupportPanel">Customer Service</a>
+        <a id="adminProfileNav" href="#adminProfilePanel">Profile</a>
       </nav>
     </header>
 
@@ -84,6 +85,42 @@
             <div id="adminCrudDelivery"></div>
           </section>
         </div>
+
+        <div class="panel-head" style="margin-top:0.9rem">
+          <h3>Delivery Pricing</h3>
+        </div>
+        <form id="adminDeliveryRateForm" class="drawer" style="max-width:420px">
+          <input id="adminDeliveryRateInput" class="kb-input" type="number" min="0" max="500" step="0.01" placeholder="INR per 10 KM" />
+          <button class="kb-btn kb-btn-primary" type="submit">Save Delivery Rate</button>
+          <p id="adminDeliveryRateStatus" class="muted"></p>
+        </form>
+
+        <div class="panel-head" style="margin-top:0.9rem">
+          <h3>User CRUD</h3>
+          <button id="adminUsersRefreshBtn" class="kb-btn kb-btn-ghost" type="button">Refresh Users</button>
+        </div>
+        <div class="drawer-actions">
+          <input id="adminUsersSearchInput" class="kb-input" placeholder="Search users by email or name" />
+          <button id="adminUsersSearchBtn" class="kb-btn kb-btn-dark" type="button">Search</button>
+        </div>
+        <form id="adminCreateUserForm" class="drawer">
+          <h4>Create User</h4>
+          <div class="drawer-grid">
+            <input class="kb-input" name="fullName" placeholder="Full name" required />
+            <input class="kb-input" name="email" type="email" placeholder="Email" required />
+            <input class="kb-input" name="phoneNumber" type="tel" placeholder="Phone number" required />
+            <input class="kb-input" name="password" type="password" placeholder="Password (min 8)" required />
+            <select class="kb-select" name="role" required>
+              <option value="student">Student</option>
+              <option value="seller">Seller</option>
+              <option value="delivery">Delivery</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <button class="kb-btn kb-btn-primary" type="submit">Create User</button>
+        </form>
+        <p id="adminUsersStatus" class="muted">Create, view, update, and delete user accounts.</p>
+        <div id="adminUsersList" class="cards"></div>
       </section>
 
       <section id="adminBannerPanel" class="panel hidden">
@@ -120,14 +157,41 @@
         </div>
         <div id="adminFeedbackList" class="cards"></div>
       </section>
+
+      <section id="adminProfilePanel" class="panel hidden">
+        <div class="panel-head">
+          <h2>Admin Profile</h2>
+        </div>
+        <form id="adminProfileForm" class="drawer" style="max-width:520px">
+          <input class="kb-input" name="fullName" placeholder="Full name" required />
+          <input class="kb-input" name="email" type="email" placeholder="Email" readonly />
+          <input class="kb-input" name="phoneNumber" type="tel" placeholder="Phone number" required />
+          <button class="kb-btn kb-btn-primary" type="submit">Save Profile</button>
+          <p id="adminProfileStatus" class="muted"></p>
+        </form>
+        <form id="adminPasswordForm" class="drawer" style="max-width:520px">
+          <input class="kb-input" name="currentPassword" type="password" placeholder="Current password" required />
+          <input class="kb-input" name="newPassword" type="password" placeholder="New password (min 8)" required />
+          <button class="kb-btn kb-btn-dark" type="submit">Change Admin Password</button>
+          <p id="adminPasswordStatus" class="muted"></p>
+        </form>
+        <form id="adminUserResetForm" class="drawer" style="max-width:520px">
+          <h4>Reset User Password</h4>
+          <input class="kb-input" name="email" type="email" placeholder="User email" required />
+          <input class="kb-input" name="newPassword" type="password" placeholder="New password (min 8)" required />
+          <button class="kb-btn kb-btn-primary" type="submit">Reset User Password</button>
+          <p id="adminUserResetStatus" class="muted"></p>
+        </form>
+      </section>
     </main>
 
     <footer class="kb-footer">
       <p>Made by UPSC aspirant. Built for learners across India. KitaabPadhoIndia. @2026 copyright</p>
     </footer>
 
-    <script type="module" src="/assets/js/admin-page.js?v=20260226d"></script>
+    <script type="module" src="/assets/js/admin-page.js?v=20260226f"></script>
   </body>
 </html>
+
 
 

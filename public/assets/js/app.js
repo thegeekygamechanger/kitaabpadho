@@ -7,6 +7,7 @@ import { initFormEnhancements } from './forms.js';
 import { initLocation } from './location.js';
 import { initMarketplace } from './marketplace.js';
 import { initNotifications } from './notifications.js';
+import { initOrders } from './orders.js';
 import { initProfile } from './profile.js';
 import { initPwa } from './pwa.js';
 import { initRealtime } from './realtime.js';
@@ -31,8 +32,8 @@ function boot() {
   }
   initFormEnhancements();
   let auth;
-  const viewIds = ['marketplace', 'community', 'ai', 'notificationsPanel', 'profilePanel', 'supportPanel'];
-  const gatedGuestViews = ['community', 'ai', 'notificationsPanel', 'profilePanel', 'supportPanel'];
+  const viewIds = ['marketplace', 'community', 'ai', 'ordersPanel', 'notificationsPanel', 'profilePanel', 'supportPanel'];
+  const gatedGuestViews = ['community', 'ai', 'ordersPanel', 'notificationsPanel', 'profilePanel', 'supportPanel'];
   const guestPromptSessionKey = 'kp_guest_login_prompt_v1';
   let guestPromptBound = false;
 
@@ -99,7 +100,10 @@ function boot() {
     }
   }
 
-  const marketplace = initMarketplace({ state });
+  const marketplace = initMarketplace({
+    state,
+    openAuthModal: (message) => auth?.openAuthModal(message)
+  });
   const banners = initBanners({ state });
 
   const community = initCommunity({
@@ -121,6 +125,11 @@ function boot() {
     openAuthModal: (message) => auth?.openAuthModal(message)
   });
 
+  const orders = initOrders({
+    state,
+    openAuthModal: (message) => auth?.openAuthModal(message)
+  });
+
   const feedback = initFeedback({
     portal: 'client',
     getUser: () => state.user,
@@ -137,7 +146,8 @@ function boot() {
     banners,
     community,
     notifications,
-    feedback
+    feedback,
+    orders
   });
 
   auth = initAuth({
@@ -149,6 +159,7 @@ function boot() {
         banners.refresh(),
         state.user ? community.loadCategories().then(() => community.refreshPosts()) : Promise.resolve(),
         profile.onAuthChanged(),
+        orders.onAuthChanged(),
         notifications.onAuthChanged(),
         feedback.onAuthChanged(),
         realtime.onAuthChanged()
@@ -210,6 +221,7 @@ function boot() {
         banners.refresh(),
         state.user ? community.refreshPosts() : Promise.resolve(),
         profile.refreshUser(),
+        orders.refresh(),
         notifications.refresh(),
         feedback.refreshMyFeedback(),
         realtime.onAuthChanged()

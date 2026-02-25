@@ -239,6 +239,66 @@ function createRepository(queryFn) {
       return result.rows;
     },
 
+    async getUserForAdmin(userId) {
+      const result = await run(
+        `SELECT
+          u.id,
+          u.email,
+          u.full_name AS "fullName",
+          u.phone_number AS "phoneNumber",
+          u.role,
+          u.push_enabled AS "pushEnabled",
+          u.totp_enabled AS "totpEnabled",
+          u.created_at AS "createdAt"
+         FROM users u
+         WHERE u.id = $1
+         LIMIT 1`,
+        [userId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async adminUpdateUser({ userId, email, fullName, phoneNumber, role }) {
+      const result = await run(
+        `UPDATE users
+         SET
+          email = COALESCE($2, email),
+          full_name = COALESCE($3, full_name),
+          phone_number = COALESCE($4, phone_number),
+          role = COALESCE($5, role)
+         WHERE id = $1
+         RETURNING
+          id,
+          email,
+          full_name AS "fullName",
+          phone_number AS "phoneNumber",
+          role,
+          push_enabled AS "pushEnabled",
+          totp_enabled AS "totpEnabled",
+          created_at AS "createdAt"`,
+        [userId, email ?? null, fullName ?? null, phoneNumber ?? null, role ?? null]
+      );
+      return result.rows[0] || null;
+    },
+
+    async adminDeleteUser(userId) {
+      const result = await run(
+        `DELETE FROM users
+         WHERE id = $1
+         RETURNING
+          id,
+          email,
+          full_name AS "fullName",
+          phone_number AS "phoneNumber",
+          role,
+          push_enabled AS "pushEnabled",
+          totp_enabled AS "totpEnabled",
+          created_at AS "createdAt"`,
+        [userId]
+      );
+      return result.rows[0] || null;
+    },
+
     async countUsers({ q = '' } = {}) {
       const values = [];
       let whereSql = '';
@@ -312,6 +372,30 @@ function createRepository(queryFn) {
           preferred_radius_km AS "preferredRadiusKm",
           updated_at AS "updatedAt"`,
         [userId, examFocus || null, preferredCategories, preferredStationery, preferredRadiusKm]
+      );
+      return result.rows[0] || null;
+    },
+
+    async getPlatformSetting(key) {
+      const result = await run(
+        `SELECT setting_key AS "key", setting_value AS "value", updated_at AS "updatedAt"
+         FROM platform_settings
+         WHERE setting_key = $1
+         LIMIT 1`,
+        [key]
+      );
+      return result.rows[0] || null;
+    },
+
+    async upsertPlatformSetting({ key, value }) {
+      const result = await run(
+        `INSERT INTO platform_settings (setting_key, setting_value, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (setting_key) DO UPDATE SET
+          setting_value = EXCLUDED.setting_value,
+          updated_at = NOW()
+         RETURNING setting_key AS "key", setting_value AS "value", updated_at AS "updatedAt"`,
+        [key, value]
       );
       return result.rows[0] || null;
     },
@@ -750,6 +834,7 @@ function createRepository(queryFn) {
           l.listing_type AS "listingType",
           l.seller_type AS "sellerType",
           l.delivery_mode AS "deliveryMode",
+          l.delivery_rate_per_10km AS "deliveryRatePer10Km",
           l.payment_modes AS "paymentModes",
           l.price,
           l.city,
@@ -864,6 +949,7 @@ function createRepository(queryFn) {
       listingType,
       sellerType = 'student',
       deliveryMode = 'peer_to_peer',
+      deliveryRatePer10Km = 20,
       paymentModes = ['cod'],
       price,
       city,
@@ -877,8 +963,8 @@ function createRepository(queryFn) {
     }) {
       const result = await run(
         `INSERT INTO listings
-          (title, description, category, listing_type, seller_type, delivery_mode, payment_modes, price, city, area_code, serviceable_area_codes, serviceable_cities, publish_india, latitude, longitude, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+          (title, description, category, listing_type, seller_type, delivery_mode, delivery_rate_per_10km, payment_modes, price, city, area_code, serviceable_area_codes, serviceable_cities, publish_india, latitude, longitude, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
          RETURNING
           id,
           title,
@@ -887,6 +973,7 @@ function createRepository(queryFn) {
           listing_type AS "listingType",
           seller_type AS "sellerType",
           delivery_mode AS "deliveryMode",
+          delivery_rate_per_10km AS "deliveryRatePer10Km",
           payment_modes AS "paymentModes",
           price,
           city,
@@ -905,6 +992,7 @@ function createRepository(queryFn) {
           listingType,
           sellerType,
           deliveryMode,
+          deliveryRatePer10Km,
           paymentModes,
           price,
           city,
@@ -930,6 +1018,7 @@ function createRepository(queryFn) {
       listingType,
       sellerType = 'student',
       deliveryMode = 'peer_to_peer',
+      deliveryRatePer10Km = 20,
       paymentModes = ['cod'],
       price,
       city,
@@ -949,15 +1038,16 @@ function createRepository(queryFn) {
           listing_type = $7,
           seller_type = $8,
           delivery_mode = $9,
-          payment_modes = $10,
-          price = $11,
-          city = $12,
-          area_code = $13,
-          serviceable_area_codes = $14,
-          serviceable_cities = $15,
-          publish_india = $16,
-          latitude = $17,
-          longitude = $18
+          delivery_rate_per_10km = $10,
+          payment_modes = $11,
+          price = $12,
+          city = $13,
+          area_code = $14,
+          serviceable_area_codes = $15,
+          serviceable_cities = $16,
+          publish_india = $17,
+          latitude = $18,
+          longitude = $19
          WHERE id = $1
            AND ($2::boolean OR created_by = $3)
          RETURNING
@@ -968,6 +1058,7 @@ function createRepository(queryFn) {
           listing_type AS "listingType",
           seller_type AS "sellerType",
           delivery_mode AS "deliveryMode",
+          delivery_rate_per_10km AS "deliveryRatePer10Km",
           payment_modes AS "paymentModes",
           price,
           city,
@@ -989,6 +1080,7 @@ function createRepository(queryFn) {
           listingType,
           sellerType,
           deliveryMode,
+          deliveryRatePer10Km,
           paymentModes,
           price,
           city,
@@ -1048,6 +1140,7 @@ function createRepository(queryFn) {
           l.listing_type AS "listingType",
           l.seller_type AS "sellerType",
           l.delivery_mode AS "deliveryMode",
+          l.delivery_rate_per_10km AS "deliveryRatePer10Km",
           l.payment_modes AS "paymentModes",
           l.price,
           l.city,
@@ -1099,6 +1192,11 @@ function createRepository(queryFn) {
         [listingId, key, url, mediaType]
       );
       return result.rows[0];
+    },
+
+    async countListingMedia(listingId) {
+      const result = await run(`SELECT COUNT(*)::int AS total FROM media_assets WHERE listing_id = $1`, [listingId]);
+      return result.rows[0]?.total || 0;
     },
 
     async listCommunityCategories() {
@@ -2034,6 +2132,400 @@ function createRepository(queryFn) {
         [jobId, Boolean(isAdmin), actorId]
       );
       return result.rows[0] || null;
+    },
+
+    async createMarketplaceOrder({
+      listingId,
+      buyerId,
+      sellerId,
+      actionKind = 'buy',
+      quantity = 1,
+      unitPrice = 0,
+      totalPrice = 0,
+      distanceKm = 0,
+      deliveryRatePer10Km = 20,
+      deliveryCharge = 0,
+      payableTotal = 0,
+      paymentMode = 'cod',
+      paymentState = 'cod_due',
+      status = 'received',
+      deliveryMode = 'peer_to_peer',
+      buyerCity = '',
+      buyerAreaCode = '',
+      notes = ''
+    }) {
+      const inserted = await run(
+        `INSERT INTO marketplace_orders
+          (listing_id, buyer_id, seller_id, action_kind, quantity, unit_price, total_price, distance_km, delivery_rate_per_10km, delivery_charge, payable_total, payment_mode, payment_state, status, delivery_mode, paycheck_amount, buyer_city, buyer_area_code, notes, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,NOW())
+         RETURNING id`,
+        [
+          listingId,
+          buyerId,
+          sellerId,
+          actionKind,
+          quantity,
+          unitPrice,
+          totalPrice,
+          distanceKm,
+          deliveryRatePer10Km,
+          deliveryCharge,
+          payableTotal,
+          paymentMode,
+          paymentState,
+          status,
+          deliveryMode,
+          deliveryCharge,
+          buyerCity || '',
+          buyerAreaCode || '',
+          notes || ''
+        ]
+      );
+      if (!inserted.rows[0]?.id) return null;
+      return this.getMarketplaceOrderById(inserted.rows[0].id);
+    },
+
+    async getMarketplaceOrderById(orderId) {
+      const result = await run(
+        `SELECT
+          mo.id,
+          mo.listing_id AS "listingId",
+          mo.buyer_id AS "buyerId",
+          mo.seller_id AS "sellerId",
+          mo.action_kind AS "actionKind",
+          mo.quantity,
+          mo.unit_price AS "unitPrice",
+          mo.total_price AS "totalPrice",
+          mo.distance_km AS "distanceKm",
+          mo.delivery_rate_per_10km AS "deliveryRatePer10Km",
+          mo.delivery_charge AS "deliveryCharge",
+          mo.payable_total AS "payableTotal",
+          mo.payment_mode AS "paymentMode",
+          mo.payment_state AS "paymentState",
+          mo.status,
+          mo.delivery_mode AS "deliveryMode",
+          mo.delivery_partner_id AS "deliveryPartnerId",
+          mo.paycheck_amount AS "paycheckAmount",
+          mo.paycheck_status AS "paycheckStatus",
+          mo.buyer_city AS "buyerCity",
+          mo.buyer_area_code AS "buyerAreaCode",
+          mo.notes,
+          mo.payment_gateway AS "paymentGateway",
+          mo.payment_gateway_order_id AS "paymentGatewayOrderId",
+          mo.created_at AS "createdAt",
+          mo.updated_at AS "updatedAt",
+          l.title AS "listingTitle",
+          l.category AS "listingCategory",
+          l.listing_type AS "listingType",
+          l.city AS "listingCity",
+          l.area_code AS "listingAreaCode",
+          l.payment_modes AS "listingPaymentModes",
+          s.full_name AS "sellerName",
+          s.email AS "sellerEmail",
+          b.full_name AS "buyerName",
+          b.email AS "buyerEmail",
+          media.object_url AS "listingImageUrl"
+        FROM marketplace_orders mo
+        INNER JOIN listings l ON l.id = mo.listing_id
+        LEFT JOIN users s ON s.id = mo.seller_id
+        LEFT JOIN users b ON b.id = mo.buyer_id
+        LEFT JOIN LATERAL (
+          SELECT object_url
+          FROM media_assets
+          WHERE listing_id = l.id
+          ORDER BY id ASC
+          LIMIT 1
+        ) media ON true
+        WHERE mo.id = $1
+        LIMIT 1`,
+        [orderId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async listMarketplaceOrdersByBuyer({ buyerId, status = '', limit = 30, offset = 0 }) {
+      const values = [buyerId];
+      const where = ['mo.buyer_id = $1'];
+      if (status) {
+        values.push(status);
+        where.push(`mo.status = $${values.length}`);
+      }
+
+      values.push(limit, offset);
+      const limitParam = values.length - 1;
+      const offsetParam = values.length;
+
+      const result = await run(
+        `SELECT
+          mo.id,
+          mo.listing_id AS "listingId",
+          mo.buyer_id AS "buyerId",
+          mo.seller_id AS "sellerId",
+          mo.action_kind AS "actionKind",
+          mo.quantity,
+          mo.unit_price AS "unitPrice",
+          mo.total_price AS "totalPrice",
+          mo.distance_km AS "distanceKm",
+          mo.delivery_rate_per_10km AS "deliveryRatePer10Km",
+          mo.delivery_charge AS "deliveryCharge",
+          mo.payable_total AS "payableTotal",
+          mo.payment_mode AS "paymentMode",
+          mo.payment_state AS "paymentState",
+          mo.status,
+          mo.delivery_mode AS "deliveryMode",
+          mo.delivery_partner_id AS "deliveryPartnerId",
+          mo.paycheck_amount AS "paycheckAmount",
+          mo.paycheck_status AS "paycheckStatus",
+          mo.buyer_city AS "buyerCity",
+          mo.buyer_area_code AS "buyerAreaCode",
+          mo.notes,
+          mo.payment_gateway AS "paymentGateway",
+          mo.payment_gateway_order_id AS "paymentGatewayOrderId",
+          mo.created_at AS "createdAt",
+          mo.updated_at AS "updatedAt",
+          l.title AS "listingTitle",
+          l.category AS "listingCategory",
+          l.listing_type AS "listingType",
+          l.city AS "listingCity",
+          l.area_code AS "listingAreaCode",
+          l.payment_modes AS "listingPaymentModes",
+          s.full_name AS "sellerName",
+          s.email AS "sellerEmail",
+          media.object_url AS "listingImageUrl"
+        FROM marketplace_orders mo
+        INNER JOIN listings l ON l.id = mo.listing_id
+        LEFT JOIN users s ON s.id = mo.seller_id
+        LEFT JOIN LATERAL (
+          SELECT object_url
+          FROM media_assets
+          WHERE listing_id = l.id
+          ORDER BY id ASC
+          LIMIT 1
+        ) media ON true
+        WHERE ${where.join(' AND ')}
+        ORDER BY mo.created_at DESC
+        LIMIT $${limitParam}
+        OFFSET $${offsetParam}`,
+        values
+      );
+      return result.rows;
+    },
+
+    async listMarketplaceOrdersBySeller({ sellerId, status = '', limit = 40, offset = 0 }) {
+      const values = [sellerId];
+      const where = ['mo.seller_id = $1'];
+      if (status) {
+        values.push(status);
+        where.push(`mo.status = $${values.length}`);
+      }
+
+      values.push(limit, offset);
+      const limitParam = values.length - 1;
+      const offsetParam = values.length;
+
+      const result = await run(
+        `SELECT
+          mo.id,
+          mo.listing_id AS "listingId",
+          mo.buyer_id AS "buyerId",
+          mo.seller_id AS "sellerId",
+          mo.action_kind AS "actionKind",
+          mo.quantity,
+          mo.unit_price AS "unitPrice",
+          mo.total_price AS "totalPrice",
+          mo.distance_km AS "distanceKm",
+          mo.delivery_rate_per_10km AS "deliveryRatePer10Km",
+          mo.delivery_charge AS "deliveryCharge",
+          mo.payable_total AS "payableTotal",
+          mo.payment_mode AS "paymentMode",
+          mo.payment_state AS "paymentState",
+          mo.status,
+          mo.delivery_mode AS "deliveryMode",
+          mo.delivery_partner_id AS "deliveryPartnerId",
+          mo.paycheck_amount AS "paycheckAmount",
+          mo.paycheck_status AS "paycheckStatus",
+          mo.buyer_city AS "buyerCity",
+          mo.buyer_area_code AS "buyerAreaCode",
+          mo.notes,
+          mo.payment_gateway AS "paymentGateway",
+          mo.payment_gateway_order_id AS "paymentGatewayOrderId",
+          mo.created_at AS "createdAt",
+          mo.updated_at AS "updatedAt",
+          l.title AS "listingTitle",
+          l.category AS "listingCategory",
+          l.listing_type AS "listingType",
+          l.city AS "listingCity",
+          l.area_code AS "listingAreaCode",
+          l.payment_modes AS "listingPaymentModes",
+          b.full_name AS "buyerName",
+          b.email AS "buyerEmail",
+          media.object_url AS "listingImageUrl"
+        FROM marketplace_orders mo
+        INNER JOIN listings l ON l.id = mo.listing_id
+        LEFT JOIN users b ON b.id = mo.buyer_id
+        LEFT JOIN LATERAL (
+          SELECT object_url
+          FROM media_assets
+          WHERE listing_id = l.id
+          ORDER BY id ASC
+          LIMIT 1
+        ) media ON true
+        WHERE ${where.join(' AND ')}
+        ORDER BY mo.created_at DESC
+        LIMIT $${limitParam}
+        OFFSET $${offsetParam}`,
+        values
+      );
+      return result.rows;
+    },
+
+    async listMarketplaceOrdersForDelivery({ deliveryUserId, isAdmin = false, status = '', limit = 40, offset = 0 }) {
+      const values = [Boolean(isAdmin), deliveryUserId];
+      const where = [
+        `(mo.delivery_mode = 'peer_to_peer' OR mo.status IN ('shipping','out_for_delivery'))`,
+        `($1::boolean OR EXISTS (
+          SELECT 1
+          FROM delivery_jobs dj
+          WHERE dj.listing_id = mo.listing_id AND dj.claimed_by = $2
+        ))`
+      ];
+      if (status) {
+        values.push(status);
+        where.push(`mo.status = $${values.length}`);
+      }
+
+      values.push(limit, offset);
+      const limitParam = values.length - 1;
+      const offsetParam = values.length;
+
+      const result = await run(
+        `SELECT
+          mo.id,
+          mo.listing_id AS "listingId",
+          mo.buyer_id AS "buyerId",
+          mo.seller_id AS "sellerId",
+          mo.action_kind AS "actionKind",
+          mo.quantity,
+          mo.unit_price AS "unitPrice",
+          mo.total_price AS "totalPrice",
+          mo.distance_km AS "distanceKm",
+          mo.delivery_rate_per_10km AS "deliveryRatePer10Km",
+          mo.delivery_charge AS "deliveryCharge",
+          mo.payable_total AS "payableTotal",
+          mo.payment_mode AS "paymentMode",
+          mo.payment_state AS "paymentState",
+          mo.status,
+          mo.delivery_mode AS "deliveryMode",
+          mo.delivery_partner_id AS "deliveryPartnerId",
+          mo.paycheck_amount AS "paycheckAmount",
+          mo.paycheck_status AS "paycheckStatus",
+          mo.buyer_city AS "buyerCity",
+          mo.buyer_area_code AS "buyerAreaCode",
+          mo.notes,
+          mo.payment_gateway AS "paymentGateway",
+          mo.payment_gateway_order_id AS "paymentGatewayOrderId",
+          mo.created_at AS "createdAt",
+          mo.updated_at AS "updatedAt",
+          l.title AS "listingTitle",
+          l.category AS "listingCategory",
+          l.listing_type AS "listingType",
+          l.city AS "listingCity",
+          l.area_code AS "listingAreaCode",
+          b.full_name AS "buyerName",
+          b.email AS "buyerEmail",
+          s.full_name AS "sellerName",
+          media.object_url AS "listingImageUrl"
+        FROM marketplace_orders mo
+        INNER JOIN listings l ON l.id = mo.listing_id
+        LEFT JOIN users b ON b.id = mo.buyer_id
+        LEFT JOIN users s ON s.id = mo.seller_id
+        LEFT JOIN LATERAL (
+          SELECT object_url
+          FROM media_assets
+          WHERE listing_id = l.id
+          ORDER BY id ASC
+          LIMIT 1
+        ) media ON true
+        WHERE ${where.join(' AND ')}
+        ORDER BY mo.updated_at DESC, mo.created_at DESC
+        LIMIT $${limitParam}
+        OFFSET $${offsetParam}`,
+        values
+      );
+      return result.rows;
+    },
+
+    async canDeliveryUserManageOrder({ listingId, userId }) {
+      const result = await run(
+        `SELECT EXISTS(
+          SELECT 1
+          FROM delivery_jobs
+          WHERE listing_id = $1 AND claimed_by = $2
+        ) AS ok`,
+        [listingId, userId]
+      );
+      return Boolean(result.rows[0]?.ok);
+    },
+
+    async updateMarketplaceOrderStatus({
+      orderId,
+      status,
+      actorId,
+      isAdmin = false,
+      allowSeller = false,
+      allowDelivery = false
+    }) {
+      const result = await run(
+        `UPDATE marketplace_orders mo
+         SET
+          status = $4,
+          delivery_partner_id = CASE
+            WHEN $6::boolean AND $4 IN ('shipping', 'out_for_delivery', 'delivered') THEN $5
+            ELSE mo.delivery_partner_id
+          END,
+          paycheck_status = CASE
+            WHEN $6::boolean AND $4 = 'delivered' THEN 'released'
+            ELSE mo.paycheck_status
+          END,
+          updated_at = NOW()
+         WHERE mo.id = $1
+           AND (
+             $2::boolean
+             OR ($3::boolean AND mo.seller_id = $5)
+             OR (
+               $6::boolean AND EXISTS (
+                 SELECT 1
+                 FROM delivery_jobs dj
+                 WHERE dj.listing_id = mo.listing_id AND dj.claimed_by = $5
+               )
+             )
+           )
+         RETURNING mo.id`,
+        [orderId, Boolean(isAdmin), Boolean(allowSeller), status, actorId, Boolean(allowDelivery)]
+      );
+      if (!result.rows[0]?.id) return null;
+      return this.getMarketplaceOrderById(result.rows[0].id);
+    },
+
+    async updateMarketplaceOrderPayment({
+      orderId,
+      paymentState,
+      paymentGateway = '',
+      paymentGatewayOrderId = ''
+    }) {
+      const result = await run(
+        `UPDATE marketplace_orders
+         SET
+          payment_state = $2,
+          payment_gateway = $3,
+          payment_gateway_order_id = $4,
+          updated_at = NOW()
+         WHERE id = $1
+         RETURNING id`,
+        [orderId, paymentState, paymentGateway || '', paymentGatewayOrderId || '']
+      );
+      if (!result.rows[0]?.id) return null;
+      return this.getMarketplaceOrderById(result.rows[0].id);
     },
 
     async deleteCommunityComment(commentId, userId, isAdmin = false) {

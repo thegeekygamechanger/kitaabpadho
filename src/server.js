@@ -40,6 +40,8 @@ const {
   notificationsQuerySchema,
   adminActionQuerySchema,
   adminUsersQuerySchema,
+  adminUserCreateSchema,
+  adminUserUpdateSchema,
   adminResetUserPasswordSchema,
   adminChangePasswordSchema,
   aiSchema,
@@ -49,6 +51,11 @@ const {
   deliveryJobsQuerySchema,
   deliveryJobStatusSchema,
   razorpayOrderSchema,
+  paymentModes,
+  orderStatuses,
+  marketplaceOrderCreateSchema,
+  marketplaceOrdersQuerySchema,
+  marketplaceOrderStatusSchema,
   feedbackCreateSchema,
   feedbackListQuerySchema,
   bannerQuerySchema,
@@ -157,6 +164,35 @@ function deriveLocalityContext(geo, nearbyCities = []) {
 
 function truncateText(value, maxLen) {
   return String(value || '').slice(0, maxLen);
+}
+
+function asMoney(value, fallback = 0) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return Number(fallback || 0);
+  return Number(amount.toFixed(2));
+}
+
+function haversineDistanceKm(fromLat, fromLon, toLat, toLon) {
+  const lat1 = Number(fromLat);
+  const lon1 = Number(fromLon);
+  const lat2 = Number(toLat);
+  const lon2 = Number(toLon);
+  if (![lat1, lon1, lat2, lon2].every((value) => Number.isFinite(value))) return 0;
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return 6371 * c;
+}
+
+function computeDeliveryCharge({ distanceKm = 0, ratePer10Km = 20 }) {
+  const distance = Math.max(0, Number(distanceKm || 0));
+  const rate = Math.max(0, Number(ratePer10Km || 0));
+  if (distance === 0 || rate === 0) return 0;
+  return asMoney(Math.ceil(distance / 10) * rate, 0);
 }
 
 function buildFeedbackObjectKey(sourcePortal = 'client') {
@@ -271,6 +307,9 @@ function createApp(deps = {}) {
   const clearCookieOptions = { ...cookieOptions };
   delete clearCookieOptions.maxAge;
   const sseClients = new Set();
+  const onlinePaymentModes = new Set(['upi', 'card', 'razorpay']);
+  const validPaymentModes = new Set(paymentModes);
+  const validOrderStatuses = new Set(orderStatuses);
   app.set('trust proxy', 1);
 
   const authLimiter = rateLimit({
@@ -1197,6 +1236,38 @@ function createApp(deps = {}) {
     }
   });
 
+  app.get('/api/settings/delivery-rate', async (_, res) => {
+    try {
+      const setting = await repository.getPlatformSetting?.('delivery_rate_per_10km');
+      const amountPer10Km = asMoney(setting?.value, 20);
+      return res.json({ amountPer10Km });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put('/api/admin/settings/delivery-rate', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const amountPer10Km = asMoney(req.body?.amountPer10Km, -1);
+      if (!Number.isFinite(amountPer10Km) || amountPer10Km < 0 || amountPer10Km > 500) {
+        return res.status(400).json({ error: 'amountPer10Km must be between 0 and 500' });
+      }
+      const saved = await repository.upsertPlatformSetting?.({
+        key: 'delivery_rate_per_10km',
+        value: String(amountPer10Km)
+      });
+      await logProjectAction(req, {
+        actionType: 'admin.delivery_rate_update',
+        entityType: 'platform_setting',
+        summary: 'Admin updated delivery rate per 10km',
+        details: { amountPer10Km }
+      });
+      return res.json({ ok: true, amountPer10Km, setting: saved });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get('/api/location/nearby', async (req, res) => {
     const lat = Number(req.query.lat);
     const lon = Number(req.query.lon);
@@ -1345,6 +1416,9 @@ function createApp(deps = {}) {
   app.post('/api/listings', listingWriteLimiter, requireRole(['seller']), async (req, res) => {
     try {
       const body = listingSchema.parse(req.body);
+      const platformRateSetting = await repository.getPlatformSetting?.('delivery_rate_per_10km').catch(() => null);
+      const defaultDeliveryRatePer10Km = asMoney(platformRateSetting?.value, 20);
+      const deliveryRatePer10Km = asMoney(body.deliveryRatePer10Km, defaultDeliveryRatePer10Km);
       const baseAreaCode = slugifyAreaCode(body.areaCode || body.city || 'unknown');
       const serviceableAreaCodes = [
         ...new Set((body.serviceableAreaCodes || []).map((item) => slugifyAreaCode(item, '')).filter(Boolean))
@@ -1357,6 +1431,7 @@ function createApp(deps = {}) {
         title: body.title.trim(),
         description: body.description.trim(),
         city: body.city.trim(),
+        deliveryRatePer10Km,
         areaCode: baseAreaCode,
         serviceableAreaCodes,
         serviceableCities,
@@ -1477,6 +1552,12 @@ function createApp(deps = {}) {
       }
 
       const body = listingUpdateSchema.parse(req.body);
+      const platformRateSetting = await repository.getPlatformSetting?.('delivery_rate_per_10km').catch(() => null);
+      const defaultDeliveryRatePer10Km = asMoney(platformRateSetting?.value, 20);
+      const nextDeliveryRatePer10Km = asMoney(
+        body.deliveryRatePer10Km,
+        asMoney(existing.deliveryRatePer10Km, defaultDeliveryRatePer10Km)
+      );
       const normalizedAreaCode = slugifyAreaCode(body.areaCode || body.city || existing.areaCode || 'unknown');
       const serviceableAreaCodes = [
         ...new Set((body.serviceableAreaCodes || []).map((item) => slugifyAreaCode(item, '')).filter(Boolean))
@@ -1494,6 +1575,7 @@ function createApp(deps = {}) {
         listingType: body.listingType,
         sellerType: body.sellerType,
         deliveryMode: body.deliveryMode,
+        deliveryRatePer10Km: nextDeliveryRatePer10Km,
         paymentModes: body.paymentModes,
         price: Number(body.price),
         city: sanitizeText(body.city, 100),
@@ -1607,6 +1689,12 @@ function createApp(deps = {}) {
       if (Number(listing.createdBy) !== Number(req.user.id)) {
         return res.status(403).json({ error: 'You can only upload media to your own listing' });
       }
+      if (typeof repository.countListingMedia === 'function') {
+        const mediaCount = await repository.countListingMedia(listingId);
+        if (mediaCount >= 10) {
+          return res.status(400).json({ error: 'Maximum 10 images allowed per listing' });
+        }
+      }
 
       const key = `listings/${listingId}/${Date.now()}-${req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
       const uploaded = await uploadMediaFn({
@@ -1670,6 +1758,371 @@ function createApp(deps = {}) {
         key
       });
       return res.json({ ...uploaded, r2Enabled: r2EnabledFlag });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/orders', listingWriteLimiter, requireAuth, async (req, res) => {
+    try {
+      const body = marketplaceOrderCreateSchema.parse(req.body);
+      if (typeof repository.getListingById !== 'function' || typeof repository.createMarketplaceOrder !== 'function') {
+        return res.status(500).json({ error: 'Order create is not available' });
+      }
+
+      const listing = await repository.getListingById(body.listingId);
+      if (!listing) return res.status(404).json({ error: 'Listing not found' });
+      if (!listing.createdBy) return res.status(400).json({ error: 'Listing seller is unavailable' });
+      if (Number(listing.createdBy) === Number(req.user.id)) {
+        return res.status(400).json({ error: 'You cannot place order on your own listing' });
+      }
+
+      const listingPaymentModes = Array.isArray(listing.paymentModes)
+        ? listing.paymentModes.filter((mode) => validPaymentModes.has(mode))
+        : [];
+      if (!listingPaymentModes.length) listingPaymentModes.push('cod');
+
+      const selectedPaymentMode = body.paymentMode || (listingPaymentModes.includes('cod') ? 'cod' : listingPaymentModes[0]);
+      if (!listingPaymentModes.includes(selectedPaymentMode)) {
+        return res.status(400).json({ error: `Payment mode ${selectedPaymentMode} is not available for this listing` });
+      }
+
+      const actionKind = listing.listingType === 'rent' ? 'rent' : 'buy';
+      if (body.action && body.action !== actionKind) {
+        return res.status(400).json({ error: `${listing.listingType} listing supports ${actionKind} flow only` });
+      }
+
+      const quantity = Number(body.quantity || 1);
+      const unitPrice = asMoney(listing.price, 0);
+      const totalPrice = asMoney(unitPrice * quantity, 0);
+
+      const buyerLat = typeof body.buyerLat === 'number' ? body.buyerLat : null;
+      const buyerLon = typeof body.buyerLon === 'number' ? body.buyerLon : null;
+      const distanceKm =
+        buyerLat !== null && buyerLon !== null
+          ? asMoney(haversineDistanceKm(buyerLat, buyerLon, listing.latitude, listing.longitude), 0)
+          : 0;
+      const deliveryRatePer10Km = asMoney(listing.deliveryRatePer10Km, 20);
+      const deliveryCharge = computeDeliveryCharge({ distanceKm, ratePer10Km: deliveryRatePer10Km });
+      const payableTotal = asMoney(totalPrice + deliveryCharge, 0);
+      const paymentState = selectedPaymentMode === 'cod' ? 'cod_due' : 'pending';
+
+      const order = await repository.createMarketplaceOrder({
+        listingId: listing.id,
+        buyerId: req.user.id,
+        sellerId: listing.createdBy,
+        actionKind,
+        quantity,
+        unitPrice,
+        totalPrice,
+        distanceKm,
+        deliveryRatePer10Km,
+        deliveryCharge,
+        payableTotal,
+        paymentMode: selectedPaymentMode,
+        paymentState,
+        status: 'received',
+        deliveryMode: listing.deliveryMode || 'peer_to_peer',
+        buyerCity: sanitizeText(body.buyerCity || '', 120),
+        buyerAreaCode: slugifyAreaCode(body.buyerAreaCode || '', ''),
+        notes: sanitizeText(body.notes || '', 500)
+      });
+      if (!order) return res.status(500).json({ error: 'Unable to create order' });
+
+      await logProjectAction(req, {
+        actionType: 'order.create',
+        entityType: 'marketplace_order',
+        entityId: order.id,
+        summary: 'Marketplace order created',
+        details: {
+          listingId: listing.id,
+          actionKind,
+          paymentMode: selectedPaymentMode,
+          payableTotal
+        }
+      });
+
+      if (typeof repository.createUserNotification === 'function') {
+        await repository.createUserNotification({
+          userId: order.sellerId,
+          kind: 'order_new',
+          title: 'New order received',
+          body: `${order.actionKind.toUpperCase()} order for ${order.listingTitle || `listing #${order.listingId}`}`,
+          entityType: 'marketplace_order',
+          entityId: order.id
+        });
+        await repository.createUserNotification({
+          userId: order.buyerId,
+          kind: 'order_new',
+          title: 'Order placed',
+          body: `Your order #${order.id} is ${order.status.replaceAll('_', ' ')}`,
+          entityType: 'marketplace_order',
+          entityId: order.id
+        });
+      }
+
+      publishRealtimeEvent('orders.updated', { type: 'order_created', orderId: order.id }, order.buyerId);
+      publishRealtimeEvent('orders.updated', { type: 'order_created', orderId: order.id }, order.sellerId);
+      publishRealtimeEvent('notifications.invalidate', { source: 'order.create' }, order.buyerId);
+      publishRealtimeEvent('notifications.invalidate', { source: 'order.create' }, order.sellerId);
+
+      return res.status(201).json({ ok: true, order });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/orders/mine', requireAuth, async (req, res) => {
+    try {
+      const filters = marketplaceOrdersQuerySchema.parse(req.query);
+      if (typeof repository.listMarketplaceOrdersByBuyer !== 'function') {
+        return res.status(500).json({ error: 'Order list is not available' });
+      }
+      const data = await repository.listMarketplaceOrdersByBuyer({
+        buyerId: req.user.id,
+        status: filters.status || '',
+        limit: filters.limit,
+        offset: filters.offset
+      });
+      return res.json({ data, meta: { total: data.length, limit: filters.limit, offset: filters.offset } });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid query' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/orders/seller', requireRole(['seller']), async (req, res) => {
+    try {
+      const filters = marketplaceOrdersQuerySchema.parse(req.query);
+      if (typeof repository.listMarketplaceOrdersBySeller !== 'function') {
+        return res.status(500).json({ error: 'Seller order list is not available' });
+      }
+      const { isAdmin } = await resolveActorPermissions(req);
+      const data = isAdmin
+        ? await repository.listMarketplaceOrdersBySeller({
+            sellerId: req.user.id,
+            status: filters.status || '',
+            limit: filters.limit,
+            offset: filters.offset
+          })
+        : await repository.listMarketplaceOrdersBySeller({
+            sellerId: req.user.id,
+            status: filters.status || '',
+            limit: filters.limit,
+            offset: filters.offset
+          });
+      return res.json({ data, meta: { total: data.length, limit: filters.limit, offset: filters.offset } });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid query' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/orders/delivery', requireRole(['delivery']), async (req, res) => {
+    try {
+      const filters = marketplaceOrdersQuerySchema.parse(req.query);
+      if (typeof repository.listMarketplaceOrdersForDelivery !== 'function') {
+        return res.status(500).json({ error: 'Delivery order list is not available' });
+      }
+      const { isAdmin } = await resolveActorPermissions(req);
+      const data = await repository.listMarketplaceOrdersForDelivery({
+        deliveryUserId: req.user.id,
+        isAdmin,
+        status: filters.status || '',
+        limit: filters.limit,
+        offset: filters.offset
+      });
+      return res.json({ data, meta: { total: data.length, limit: filters.limit, offset: filters.offset } });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid query' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/orders/:id', requireAuth, async (req, res) => {
+    const orderId = parseId(req.params.id);
+    if (!orderId) return res.status(400).json({ error: 'Invalid order id' });
+    try {
+      if (typeof repository.getMarketplaceOrderById !== 'function') {
+        return res.status(500).json({ error: 'Order view is not available' });
+      }
+      const order = await repository.getMarketplaceOrderById(orderId);
+      if (!order) return res.status(404).json({ error: 'Order not found' });
+
+      const { isAdmin } = await resolveActorPermissions(req);
+      const isParty =
+        isAdmin ||
+        Number(order.buyerId) === Number(req.user.id) ||
+        Number(order.sellerId) === Number(req.user.id) ||
+        Number(order.deliveryPartnerId) === Number(req.user.id);
+      if (!isParty) return res.status(403).json({ error: 'Access denied for this order' });
+      return res.json(order);
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put('/api/orders/:id/status', requireRole(['seller', 'delivery']), async (req, res) => {
+    const orderId = parseId(req.params.id);
+    if (!orderId) return res.status(400).json({ error: 'Invalid order id' });
+    try {
+      const body = marketplaceOrderStatusSchema.parse(req.body);
+      const nextStatus = body.status;
+      if (!validOrderStatuses.has(nextStatus)) return res.status(400).json({ error: 'Invalid status' });
+      if (
+        typeof repository.getMarketplaceOrderById !== 'function' ||
+        typeof repository.updateMarketplaceOrderStatus !== 'function'
+      ) {
+        return res.status(500).json({ error: 'Order status update is not available' });
+      }
+
+      const existing = await repository.getMarketplaceOrderById(orderId);
+      if (!existing) return res.status(404).json({ error: 'Order not found' });
+      const { isAdmin } = await resolveActorPermissions(req);
+
+      const role = String(req.user.role || '').toLowerCase();
+      const sellerAllowed = new Set(['received', 'packing', 'shipping', 'cancelled']);
+      const deliveryAllowed = new Set(['shipping', 'out_for_delivery', 'delivered']);
+
+      const isSellerActor = Number(existing.sellerId) === Number(req.user.id);
+      let isDeliveryActor = false;
+      if (role === 'delivery' && typeof repository.canDeliveryUserManageOrder === 'function') {
+        isDeliveryActor = await repository.canDeliveryUserManageOrder({
+          listingId: existing.listingId,
+          userId: req.user.id
+        });
+      }
+
+      if (!isAdmin) {
+        if (role === 'seller') {
+          if (!isSellerActor) return res.status(403).json({ error: 'Only seller can update this order' });
+          if (!sellerAllowed.has(nextStatus)) {
+            return res.status(403).json({ error: 'Seller can set received, packing, shipping, or cancelled' });
+          }
+        } else if (role === 'delivery') {
+          if (!isDeliveryActor) return res.status(403).json({ error: 'Claim delivery job first to update this order' });
+          if (!deliveryAllowed.has(nextStatus)) {
+            return res.status(403).json({ error: 'Delivery can set shipping, out_for_delivery, or delivered' });
+          }
+        }
+      }
+
+      const updated = await repository.updateMarketplaceOrderStatus({
+        orderId,
+        status: nextStatus,
+        actorId: req.user.id,
+        isAdmin,
+        allowSeller: role === 'seller',
+        allowDelivery: role === 'delivery'
+      });
+      if (!updated) return res.status(404).json({ error: 'Order not found or forbidden' });
+
+      await logProjectAction(req, {
+        actionType: 'order.status_update',
+        entityType: 'marketplace_order',
+        entityId: orderId,
+        summary: 'Marketplace order status updated',
+        details: { previousStatus: existing.status, status: updated.status }
+      });
+
+      if (typeof repository.createUserNotification === 'function') {
+        if (updated.buyerId) {
+          await repository.createUserNotification({
+            userId: updated.buyerId,
+            kind: 'order_status',
+            title: 'Order status updated',
+            body: `Order #${updated.id}: ${updated.status.replaceAll('_', ' ')}`,
+            entityType: 'marketplace_order',
+            entityId: updated.id
+          });
+        }
+        if (updated.sellerId && Number(updated.sellerId) !== Number(req.user.id)) {
+          await repository.createUserNotification({
+            userId: updated.sellerId,
+            kind: 'order_status',
+            title: 'Order status updated',
+            body: `Order #${updated.id}: ${updated.status.replaceAll('_', ' ')}`,
+            entityType: 'marketplace_order',
+            entityId: updated.id
+          });
+        }
+        if (role === 'delivery' && updated.status === 'delivered' && updated.paycheckStatus === 'released') {
+          await repository.createUserNotification({
+            userId: req.user.id,
+            kind: 'delivery_paycheck',
+            title: 'Paycheck released',
+            body: `INR ${Number(updated.paycheckAmount || 0).toFixed(2)} released for order #${updated.id}.`,
+            entityType: 'marketplace_order',
+            entityId: updated.id
+          });
+        }
+      }
+
+      publishRealtimeEvent('orders.updated', { type: 'order_status_updated', orderId: updated.id }, updated.buyerId);
+      publishRealtimeEvent('orders.updated', { type: 'order_status_updated', orderId: updated.id }, updated.sellerId);
+      if (updated.deliveryPartnerId) {
+        publishRealtimeEvent('orders.updated', { type: 'order_status_updated', orderId: updated.id }, updated.deliveryPartnerId);
+      }
+      publishRealtimeEvent('notifications.invalidate', { source: 'order.status_update' }, updated.buyerId);
+      publishRealtimeEvent('notifications.invalidate', { source: 'order.status_update' }, updated.sellerId);
+
+      return res.json({ ok: true, order: updated });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/orders/:id/payments/razorpay', requireAuth, async (req, res) => {
+    const orderId = parseId(req.params.id);
+    if (!orderId) return res.status(400).json({ error: 'Invalid order id' });
+    try {
+      if (!razorpayClient) {
+        return res.status(500).json({ error: 'Razorpay keys are not configured' });
+      }
+      if (
+        typeof repository.getMarketplaceOrderById !== 'function' ||
+        typeof repository.updateMarketplaceOrderPayment !== 'function'
+      ) {
+        return res.status(500).json({ error: 'Order payment is not available' });
+      }
+      const order = await repository.getMarketplaceOrderById(orderId);
+      if (!order) return res.status(404).json({ error: 'Order not found' });
+      if (Number(order.buyerId) !== Number(req.user.id)) {
+        return res.status(403).json({ error: 'Only buyer can create payment order' });
+      }
+      if (!onlinePaymentModes.has(String(order.paymentMode || '').toLowerCase())) {
+        return res.status(400).json({ error: 'Online payment is not enabled for this order' });
+      }
+
+      const paymentOrder = await razorpayClient.orders.create({
+        amount: Math.round(Number(order.payableTotal || 0) * 100),
+        currency: appConfig.payments.currency || 'INR',
+        receipt: `order-${order.id}-${Date.now()}`
+      });
+      const updated = await repository.updateMarketplaceOrderPayment({
+        orderId: order.id,
+        paymentState: 'pending',
+        paymentGateway: 'razorpay',
+        paymentGatewayOrderId: paymentOrder.id || ''
+      });
+
+      await logProjectAction(req, {
+        actionType: 'order.payment_create',
+        entityType: 'marketplace_order',
+        entityId: order.id,
+        summary: 'Razorpay payment order created',
+        details: { payableTotal: Number(order.payableTotal || 0), gatewayOrderId: paymentOrder.id || '' }
+      });
+
+      publishRealtimeEvent('orders.updated', { type: 'order_payment_created', orderId: order.id }, order.buyerId);
+      return res.json({
+        ok: true,
+        keyId: appConfig.payments.razorpayKeyId,
+        paymentOrder,
+        order: updated || order
+      });
     } catch (error) {
       return res.status(500).json({ error: error.message });
     }
@@ -2478,11 +2931,151 @@ function createApp(deps = {}) {
       });
 
       return res.json({
-        data: data.map(toPublicUser),
+        data: data.map((item) => ({
+          ...toPublicUser(item),
+          createdAt: item.createdAt || null
+        })),
         meta: { total, limit: filters.limit, offset: filters.offset }
       });
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid query' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) => {
+    const userId = parseId(req.params.id);
+    if (!userId) return res.status(400).json({ error: 'Invalid user id' });
+    try {
+      const user =
+        typeof repository.getUserForAdmin === 'function'
+          ? await repository.getUserForAdmin(userId)
+          : await repository.findUserById(userId);
+      if (!user) return res.status(404).json({ error: 'User not found' });
+      return res.json({
+        user: {
+          ...toPublicUser(user),
+          createdAt: user.createdAt || null
+        }
+      });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post('/api/admin/users', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const body = adminUserCreateSchema.parse(req.body);
+      if (typeof repository.createUser !== 'function' || typeof repository.findUserByEmail !== 'function') {
+        return res.status(500).json({ error: 'Admin user create is not available' });
+      }
+
+      const existing = await repository.findUserByEmail(body.email);
+      if (existing) return res.status(409).json({ error: 'Email already registered' });
+      if (await isUsernameTaken(body.fullName)) return res.status(409).json({ error: 'Username already used' });
+
+      const passwordHash = await hashPassword(body.password);
+      const user = await repository.createUser({
+        email: sanitizeText(body.email, 180).toLowerCase(),
+        fullName: sanitizeText(body.fullName, 120),
+        phoneNumber: sanitizeText(body.phoneNumber, 20),
+        passwordHash,
+        role: body.role
+      });
+
+      await logProjectAction(req, {
+        actionType: 'admin.user_create',
+        entityType: 'user',
+        entityId: user.id,
+        summary: 'Admin created user',
+        details: { email: user.email, role: user.role }
+      });
+
+      return res.status(201).json({ ok: true, user: toPublicUser(user) });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
+      if (error?.code === '23505') return res.status(409).json({ error: 'Email already registered' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.put('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) => {
+    const userId = parseId(req.params.id);
+    if (!userId) return res.status(400).json({ error: 'Invalid user id' });
+    try {
+      const body = adminUserUpdateSchema.parse(req.body);
+      if (typeof repository.adminUpdateUser !== 'function') {
+        return res.status(500).json({ error: 'Admin user update is not available' });
+      }
+      if (Number(req.user.id) === Number(userId) && body.role && body.role !== 'admin') {
+        return res.status(400).json({ error: 'Admin cannot remove own admin role' });
+      }
+
+      if (body.email && typeof repository.findUserByEmail === 'function') {
+        const existing = await repository.findUserByEmail(body.email);
+        if (existing && Number(existing.id) !== Number(userId)) {
+          return res.status(409).json({ error: 'Email already registered' });
+        }
+      }
+
+      if (body.fullName && typeof repository.findUserByFullName === 'function') {
+        const existingName = await repository.findUserByFullName(body.fullName);
+        if (existingName && Number(existingName.id) !== Number(userId)) {
+          return res.status(409).json({ error: 'Username already used' });
+        }
+      }
+
+      const user = await repository.adminUpdateUser({
+        userId,
+        email: body.email ? sanitizeText(body.email, 180).toLowerCase() : undefined,
+        fullName: body.fullName ? sanitizeText(body.fullName, 120) : undefined,
+        phoneNumber: body.phoneNumber ? sanitizeText(body.phoneNumber, 20) : undefined,
+        role: body.role
+      });
+      if (!user) return res.status(404).json({ error: 'User not found' });
+
+      await logProjectAction(req, {
+        actionType: 'admin.user_update',
+        entityType: 'user',
+        entityId: user.id,
+        summary: 'Admin updated user',
+        details: {
+          updatedFields: Object.keys(body),
+          role: user.role
+        }
+      });
+
+      return res.json({ ok: true, user: toPublicUser(user) });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
+      if (error?.code === '23505') return res.status(409).json({ error: 'Email already registered' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) => {
+    const userId = parseId(req.params.id);
+    if (!userId) return res.status(400).json({ error: 'Invalid user id' });
+    try {
+      if (Number(req.user.id) === Number(userId)) {
+        return res.status(400).json({ error: 'Admin cannot delete own account' });
+      }
+      if (typeof repository.adminDeleteUser !== 'function') {
+        return res.status(500).json({ error: 'Admin user delete is not available' });
+      }
+      const deleted = await repository.adminDeleteUser(userId);
+      if (!deleted) return res.status(404).json({ error: 'User not found' });
+
+      await logProjectAction(req, {
+        actionType: 'admin.user_delete',
+        entityType: 'user',
+        entityId: deleted.id,
+        summary: 'Admin deleted user',
+        details: { email: deleted.email, role: deleted.role }
+      });
+
+      return res.json({ ok: true, user: toPublicUser(deleted) });
+    } catch (error) {
       return res.status(500).json({ error: error.message });
     }
   });

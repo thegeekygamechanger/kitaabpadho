@@ -4,18 +4,22 @@ const categories = ['book', 'instrument', 'notes', 'video', 'pdf', 'stationery',
 const listingTypes = ['rent', 'buy', 'sell'];
 const areaCodes = ['all'];
 const accountRoles = ['student', 'seller', 'delivery'];
+const adminAccountRoles = ['student', 'seller', 'delivery', 'admin'];
 const sellerTypes = ['student', 'library', 'reseller', 'wholesaler', 'college', 'individual_seller', 'shop'];
 const deliveryModes = ['peer_to_peer', 'seller_dedicated', 'kpi_dedicated'];
 const paymentModes = ['cod', 'upi', 'card', 'razorpay'];
+const orderStatuses = ['received', 'packing', 'shipping', 'out_for_delivery', 'delivered', 'cancelled'];
 const listingScopes = ['local', 'india', 'all'];
 const bannerScopes = ['local', 'india', 'all'];
 
 const categoryEnum = z.enum(categories);
 const listingTypeEnum = z.enum(listingTypes);
 const accountRoleEnum = z.enum(accountRoles);
+const adminAccountRoleEnum = z.enum(adminAccountRoles);
 const sellerTypeEnum = z.enum(sellerTypes);
 const deliveryModeEnum = z.enum(deliveryModes);
 const paymentModeEnum = z.enum(paymentModes);
+const orderStatusEnum = z.enum(orderStatuses);
 const listingScopeEnum = z.enum(listingScopes);
 const bannerScopeEnum = z.enum(bannerScopes);
 const areaCodeSchema = z.string().trim().min(2).max(80).regex(/^[a-z0-9_-]+$/);
@@ -34,6 +38,7 @@ const listingSchema = z.object({
   listingType: listingTypeEnum,
   sellerType: sellerTypeEnum.optional().default('student'),
   deliveryMode: deliveryModeEnum.optional().default('peer_to_peer'),
+  deliveryRatePer10Km: z.number().min(0).max(500).optional(),
   paymentModes: z.array(paymentModeEnum).min(1).max(4).optional().default(['cod']),
   price: z.number().min(0),
   latitude: z.number().min(-90).max(90),
@@ -121,6 +126,26 @@ const adminUsersQuerySchema = z.object({
   limit: optionalNumber(z.number().int().min(1).max(100)).default(50),
   offset: optionalNumber(z.number().int().min(0).max(10000)).default(0)
 });
+
+const adminUserCreateSchema = z.object({
+  email: z.string().trim().email().max(180),
+  fullName: z.string().trim().min(2).max(120),
+  phoneNumber: z.string().trim().regex(/^[0-9]{10,15}$/),
+  password: z.string().min(8).max(128),
+  role: adminAccountRoleEnum.optional().default('student')
+});
+
+const adminUserUpdateSchema = z
+  .object({
+    email: z.string().trim().email().max(180).optional(),
+    fullName: z.string().trim().min(2).max(120).optional(),
+    phoneNumber: z.string().trim().regex(/^[0-9]{10,15}$/).optional(),
+    role: adminAccountRoleEnum.optional()
+  })
+  .refine((payload) => Object.keys(payload).length > 0, {
+    message: 'At least one field is required',
+    path: ['email']
+  });
 
 const adminResetUserPasswordSchema = z.object({
   email: z.string().trim().email().max(180),
@@ -254,14 +279,44 @@ const razorpayOrderSchema = z.object({
   receipt: z.string().trim().min(2).max(80).optional()
 });
 
+const marketplaceOrderCreateSchema = z.object({
+  listingId: z.preprocess(
+    (value) => {
+      const asNumber = Number(value);
+      return Number.isNaN(asNumber) ? value : asNumber;
+    },
+    z.number().int().positive()
+  ),
+  action: z.enum(['buy', 'rent']).optional(),
+  quantity: optionalNumber(z.number().int().min(1).max(20)).default(1),
+  paymentMode: paymentModeEnum.optional(),
+  buyerLat: optionalNumber(z.number().min(-90).max(90)),
+  buyerLon: optionalNumber(z.number().min(-180).max(180)),
+  buyerCity: z.string().trim().min(2).max(120).optional(),
+  buyerAreaCode: z.string().trim().min(1).max(120).optional(),
+  notes: z.string().trim().max(500).optional().default('')
+});
+
+const marketplaceOrdersQuerySchema = z.object({
+  status: orderStatusEnum.optional(),
+  limit: optionalNumber(z.number().int().min(1).max(100)).default(30),
+  offset: optionalNumber(z.number().int().min(0).max(10000)).default(0)
+});
+
+const marketplaceOrderStatusSchema = z.object({
+  status: orderStatusEnum
+});
+
 module.exports = {
   categories,
   listingTypes,
   areaCodes,
   accountRoles,
+  adminAccountRoles,
   sellerTypes,
   deliveryModes,
   paymentModes,
+  orderStatuses,
   listingScopes,
   bannerScopes,
   listingSchema,
@@ -280,6 +335,8 @@ module.exports = {
   notificationsQuerySchema,
   adminActionQuerySchema,
   adminUsersQuerySchema,
+  adminUserCreateSchema,
+  adminUserUpdateSchema,
   adminResetUserPasswordSchema,
   adminChangePasswordSchema,
   aiSchema,
@@ -289,6 +346,9 @@ module.exports = {
   deliveryJobsQuerySchema,
   deliveryJobStatusSchema,
   razorpayOrderSchema,
+  marketplaceOrderCreateSchema,
+  marketplaceOrdersQuerySchema,
+  marketplaceOrderStatusSchema,
   feedbackCreateSchema,
   feedbackListQuerySchema,
   bannerQuerySchema,

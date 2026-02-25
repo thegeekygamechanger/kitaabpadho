@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS listings (
   listing_type TEXT NOT NULL CHECK (listing_type IN ('rent','buy','sell')),
   seller_type TEXT NOT NULL DEFAULT 'student' CHECK (seller_type IN ('student','library','reseller','wholesaler','college','individual_seller','shop')),
   delivery_mode TEXT NOT NULL DEFAULT 'peer_to_peer' CHECK (delivery_mode IN ('peer_to_peer','seller_dedicated','kpi_dedicated')),
+  delivery_rate_per_10km NUMERIC(10,2) NOT NULL DEFAULT 20,
   payment_modes TEXT[] NOT NULL DEFAULT ARRAY['cod']::TEXT[],
   price NUMERIC(10,2) NOT NULL DEFAULT 0,
   city TEXT NOT NULL,
@@ -172,6 +173,41 @@ CREATE TABLE IF NOT EXISTS marketing_banners (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS platform_settings (
+  setting_key TEXT PRIMARY KEY,
+  setting_value TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS marketplace_orders (
+  id BIGSERIAL PRIMARY KEY,
+  listing_id BIGINT NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+  buyer_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  seller_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  action_kind TEXT NOT NULL CHECK (action_kind IN ('buy','rent')),
+  quantity INT NOT NULL DEFAULT 1,
+  unit_price NUMERIC(10,2) NOT NULL DEFAULT 0,
+  total_price NUMERIC(10,2) NOT NULL DEFAULT 0,
+  distance_km NUMERIC(8,2) NOT NULL DEFAULT 0,
+  delivery_rate_per_10km NUMERIC(10,2) NOT NULL DEFAULT 20,
+  delivery_charge NUMERIC(10,2) NOT NULL DEFAULT 0,
+  payable_total NUMERIC(10,2) NOT NULL DEFAULT 0,
+  payment_mode TEXT NOT NULL CHECK (payment_mode IN ('cod','upi','card','razorpay')),
+  payment_state TEXT NOT NULL DEFAULT 'pending' CHECK (payment_state IN ('pending','paid','failed','cod_due')),
+  payment_gateway TEXT NOT NULL DEFAULT '',
+  payment_gateway_order_id TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'received' CHECK (status IN ('received','packing','shipping','out_for_delivery','delivered','cancelled')),
+  delivery_mode TEXT NOT NULL DEFAULT 'peer_to_peer',
+  delivery_partner_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  paycheck_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+  paycheck_status TEXT NOT NULL DEFAULT 'pending' CHECK (paycheck_status IN ('pending','released')),
+  buyer_city TEXT NOT NULL DEFAULT '',
+  buyer_area_code TEXT NOT NULL DEFAULT '',
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_listings_geo ON listings (latitude, longitude);
 CREATE INDEX IF NOT EXISTS idx_listings_created_at ON listings (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_listings_filters ON listings (listing_type, category, area_code);
@@ -195,6 +231,10 @@ CREATE INDEX IF NOT EXISTS idx_customer_feedback_user_created ON customer_feedba
 CREATE INDEX IF NOT EXISTS idx_customer_feedback_created ON customer_feedback (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_marketing_banners_scope_active ON marketing_banners (scope, is_active, priority DESC, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_marketing_banners_listing ON marketing_banners (listing_id);
+CREATE INDEX IF NOT EXISTS idx_marketplace_orders_buyer_created ON marketplace_orders (buyer_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_marketplace_orders_seller_created ON marketplace_orders (seller_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_marketplace_orders_status_updated ON marketplace_orders (status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_marketplace_orders_listing ON marketplace_orders (listing_id, created_at DESC);
 
 INSERT INTO community_categories (slug, name, description)
 VALUES

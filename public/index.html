@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -13,7 +13,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/assets/css/app.css?v=20260226d" />
+    <link rel="stylesheet" href="/assets/css/app.css?v=20260226f" />
   </head>
   <body>
     <header class="kb-header">
@@ -45,6 +45,7 @@
         <a class="active" href="#marketplace">Marketplace</a>
         <a id="communityNavLink" href="#community" hidden>Community</a>
         <a id="profileNavLink" href="#profilePanel" hidden>Profile</a>
+        <a id="ordersNavLink" href="#ordersPanel" hidden>Orders</a>
         <a id="aiNavLink" href="#ai" hidden>Ask PadhAI</a>
         <a id="supportNavLink" href="#supportPanel" hidden>Customer Service</a>
         <button id="notificationsBtn" class="kb-btn kb-btn-ghost notif-btn" hidden type="button">
@@ -174,6 +175,26 @@
         </div>
         <p id="notificationsStatus" class="muted">Login to receive alerts for new arrivals and community updates.</p>
         <div id="notificationsList" class="cards"></div>
+      </section>
+
+      <section id="ordersPanel" class="panel hidden">
+        <div class="panel-head">
+          <h2>My Orders</h2>
+          <div class="drawer-actions">
+            <select id="ordersStatusFilter" class="kb-select">
+              <option value="">All Status</option>
+              <option value="received">Received</option>
+              <option value="packing">Packing</option>
+              <option value="shipping">Shipping</option>
+              <option value="out_for_delivery">Out for Delivery</option>
+              <option value="delivered">Delivered</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+            <button id="ordersRefreshBtn" class="kb-btn kb-btn-ghost" type="button">Refresh</button>
+          </div>
+        </div>
+        <p id="ordersStatus" class="muted">Login to view your orders and live status workflow.</p>
+        <div id="ordersList" class="cards"></div>
       </section>
 
       <section id="profilePanel" class="panel hidden">
@@ -341,9 +362,10 @@
       </div>
     </section>
 
-    <script type="module" src="/assets/js/app.js?v=20260226d"></script>
+    <script type="module" src="/assets/js/app.js?v=20260226f"></script>
   </body>
 </html>
+
 
 
 

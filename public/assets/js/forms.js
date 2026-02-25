@@ -47,6 +47,42 @@ function ensureLabel(field, form) {
   field.parentElement?.insertBefore(label, field);
 }
 
+function isPasswordInput(field) {
+  return field instanceof HTMLInputElement && field.type === 'password';
+}
+
+function ensurePasswordToggle(field) {
+  if (!isPasswordInput(field)) return;
+  if (field.dataset.passwordToggleReady === 'true') return;
+
+  let wrapper = field.closest('.password-wrap');
+  if (!wrapper) {
+    wrapper = document.createElement('div');
+    wrapper.className = 'password-wrap';
+    field.parentElement?.insertBefore(wrapper, field);
+    wrapper.appendChild(field);
+  }
+
+  let button = wrapper.querySelector('.password-toggle-btn');
+  if (!button) {
+    button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'password-toggle-btn';
+    button.innerHTML = '<span aria-hidden="true">&#128065;</span>';
+    button.setAttribute('aria-label', 'Show password');
+    wrapper.appendChild(button);
+  }
+
+  button.addEventListener('click', () => {
+    const visible = field.type === 'text';
+    field.type = visible ? 'password' : 'text';
+    button.classList.toggle('is-visible', !visible);
+    button.setAttribute('aria-label', visible ? 'Show password' : 'Hide password');
+  });
+
+  field.dataset.passwordToggleReady = 'true';
+}
+
 function skipAutoLabeling(form) {
   if (!(form instanceof HTMLElement)) return false;
   return form.matches('[data-no-auto-label], .kb-search');
@@ -114,6 +150,7 @@ export function initFormEnhancements(root = document) {
     if (!skipAutoLabeling(form)) {
       const fields = form.querySelectorAll('input, select, textarea');
       fields.forEach((field) => ensureLabel(field, form));
+      fields.forEach((field) => ensurePasswordToggle(field));
     }
     wireValidation(form);
   }

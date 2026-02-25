@@ -29,18 +29,30 @@ function normalizeCities(value) {
 let currentUser = null;
 let currentListings = [];
 let currentBanners = [];
+let currentSellerOrders = [];
 let locationOptions = [];
 let stream = null;
 let feedback = null;
 const PORTAL_KEY = 'kp_active_portal';
 const PORTAL_NAME = 'seller';
-const TAB_SECTION_IDS = ['sellerPostingPanel', 'sellerListingsPanel', 'sellerBannerPanel', 'sellerSupportPanel'];
+const TAB_SECTION_IDS = [
+  'sellerPostingPanel',
+  'sellerListingsPanel',
+  'sellerOrdersPanel',
+  'sellerProfilePanel',
+  'sellerBannerPanel',
+  'sellerSupportPanel'
+];
 const TAB_LINK_IDS = {
   sellerPostingPanel: 'sellerWorkspaceNav',
   sellerListingsPanel: 'sellerWorkspaceNav',
+  sellerOrdersPanel: 'sellerOrdersNav',
+  sellerProfilePanel: 'sellerProfileNav',
   sellerBannerPanel: 'sellerBannerNav',
   sellerSupportPanel: 'sellerSupportNav'
 };
+const ORDER_FLOW = ['received', 'packing', 'shipping', 'out_for_delivery', 'delivered', 'cancelled'];
+const SELLER_STATUS_OPTIONS = ['packing', 'shipping', 'cancelled'];
 
 initFormEnhancements();
 
@@ -68,7 +80,16 @@ function setSectionVisibility(id, visible) {
 
 function activeSellerTabIds() {
   if (!currentUser) return [];
-  if (isSellerAccount()) return ['sellerPostingPanel', 'sellerListingsPanel', 'sellerBannerPanel', 'sellerSupportPanel'];
+  if (isSellerAccount()) {
+    return [
+      'sellerPostingPanel',
+      'sellerListingsPanel',
+      'sellerOrdersPanel',
+      'sellerProfilePanel',
+      'sellerBannerPanel',
+      'sellerSupportPanel'
+    ];
+  }
   if (currentUser.role === 'admin') return ['sellerBannerPanel', 'sellerSupportPanel'];
   return [];
 }
@@ -115,11 +136,15 @@ function syncPortalVisibility() {
   el('sellerPortalNav')?.classList.toggle('hidden', !portalAccess);
 
   el('sellerWorkspaceNav')?.classList.toggle('hidden', !sellerRole);
+  el('sellerOrdersNav')?.classList.toggle('hidden', !sellerRole);
+  el('sellerProfileNav')?.classList.toggle('hidden', !sellerRole);
   el('sellerBannerNav')?.classList.toggle('hidden', !bannerRole);
   el('sellerSupportNav')?.classList.toggle('hidden', !portalAccess);
   setSectionVisibility('sellerLoginPanel', loginVisible);
   setSectionVisibility('sellerPostingPanel', sellerRole);
   setSectionVisibility('sellerListingsPanel', sellerRole);
+  setSectionVisibility('sellerOrdersPanel', sellerRole);
+  setSectionVisibility('sellerProfilePanel', sellerRole);
   setSectionVisibility('sellerBannerPanel', bannerRole);
   setSectionVisibility('sellerSupportPanel', portalAccess);
   syncTabView();
@@ -222,6 +247,81 @@ function renderBanners(items) {
     </article>`
     )
     .join('');
+}
+
+function prettyOrderStatus(status) {
+  return String(status || '').replaceAll('_', ' ');
+}
+
+function renderOrderStatusRail(status) {
+  if (status === 'cancelled') {
+    return `<div class="order-status-rail"><span class="order-step current">cancelled</span></div>`;
+  }
+  const currentIndex = ORDER_FLOW.indexOf(status);
+  return `<div class="order-status-rail">${ORDER_FLOW.filter((step) => step !== 'cancelled')
+    .map((step, index) => {
+      const cls = index === currentIndex ? 'order-step current' : 'order-step';
+      return `<span class="${cls}">${escapeHtml(prettyOrderStatus(step))}</span>`;
+    })
+    .join('')}</div>`;
+}
+
+function nextSellerStatuses(currentStatus) {
+  const current = String(currentStatus || '').toLowerCase();
+  if (current === 'received') return ['packing', 'cancelled'];
+  if (current === 'packing') return ['shipping', 'cancelled'];
+  if (current === 'shipping') return ['cancelled'];
+  return [];
+}
+
+function renderSellerOrders(items) {
+  const node = el('sellerOrdersList');
+  if (!node) return;
+  if (!Array.isArray(items) || !items.length) {
+    node.innerHTML = `<article class="state-empty">No seller orders found.</article>`;
+    return;
+  }
+  node.innerHTML = items
+    .map((item) => {
+      const nextStatuses = nextSellerStatuses(item.status).filter((status) => SELLER_STATUS_OPTIONS.includes(status));
+      return `<article class="card">
+        <div class="card-media">${
+          item.listingImageUrl ? `<img src="${escapeHtml(item.listingImageUrl)}" alt="${escapeHtml(item.listingTitle || 'Order item')}" />` : '<strong>No Image</strong>'
+        }</div>
+        <div class="card-body">
+          <div class="card-meta">
+            <span class="pill type-buy">${escapeHtml(item.actionKind || 'buy')}</span>
+            <span class="pill type-rent">${escapeHtml(prettyOrderStatus(item.status || 'received'))}</span>
+            <span class="muted">#${escapeHtml(String(item.id || ''))}</span>
+          </div>
+          <h3 class="card-title">${escapeHtml(item.listingTitle || `Listing #${item.listingId}`)}</h3>
+          <p class="muted">Buyer: ${escapeHtml(item.buyerName || item.buyerEmail || '-')}</p>
+          <p class="muted">Payment: ${escapeHtml(item.paymentMode || 'cod')} (${escapeHtml(item.paymentState || 'pending')})</p>
+          <p class="muted">Items: ${formatInr(item.totalPrice)} | Delivery: ${formatInr(item.deliveryCharge)} | Total: ${formatInr(item.payableTotal)}</p>
+          ${renderOrderStatusRail(item.status)}
+          <div class="card-actions">
+            ${nextStatuses
+              .map(
+                (status) =>
+                  `<button class="kb-btn kb-btn-ghost seller-order-status-btn" data-id="${item.id}" data-status="${status}" type="button">${escapeHtml(
+                    prettyOrderStatus(status)
+                  )}</button>`
+              )
+              .join('')}
+            <button class="kb-btn kb-btn-dark seller-order-view-btn" data-id="${item.id}" type="button">View</button>
+          </div>
+        </div>
+      </article>`;
+    })
+    .join('');
+}
+
+function renderSellerProfile() {
+  const form = el('sellerProfileForm');
+  if (!form || !currentUser || !isSellerAccount()) return;
+  if (form.fullName) form.fullName.value = currentUser.fullName || '';
+  if (form.email) form.email.value = currentUser.email || '';
+  if (form.phoneNumber) form.phoneNumber.value = currentUser.phoneNumber || '';
 }
 
 function setCityOptions(cities = []) {
@@ -351,6 +451,7 @@ async function refreshAuth() {
     setText('sellerAuthBadge', 'Guest');
   }
   syncPortalVisibility();
+  renderSellerProfile();
   await feedback?.onAuthChanged?.();
   connectRealtime();
 }
@@ -385,6 +486,27 @@ async function refreshBanners() {
   }
 }
 
+async function refreshSellerOrders() {
+  if (!isSellerAccount()) {
+    currentSellerOrders = [];
+    renderSellerOrders([]);
+    return;
+  }
+  try {
+    const status = String(el('sellerOrdersStatusFilter')?.value || '');
+    const result = await api.listSellerOrders({
+      status: status || undefined,
+      limit: 60,
+      offset: 0
+    });
+    currentSellerOrders = Array.isArray(result.data) ? result.data : [];
+    renderSellerOrders(currentSellerOrders);
+    setText('sellerOrdersStatus', `Showing ${currentSellerOrders.length} order(s).`);
+  } catch (error) {
+    setText('sellerOrdersStatus', error.message || 'Unable to load seller orders');
+  }
+}
+
 function connectRealtime() {
   if (stream) stream.close();
   stream = new EventSource('/api/events/stream');
@@ -399,6 +521,9 @@ function connectRealtime() {
   });
   stream.addEventListener('listing.deleted', async () => {
     if (isSellerAccount()) await refreshListings().catch(() => null);
+  });
+  stream.addEventListener('orders.updated', async () => {
+    if (isSellerAccount()) await refreshSellerOrders().catch(() => null);
   });
   stream.addEventListener('banner.updated', async () => {
     if (isBannerManager()) await refreshBanners().catch(() => null);
@@ -433,6 +558,7 @@ el('sellerLoginForm')?.addEventListener('submit', async (event) => {
     if (currentUser?.role === 'admin') window.location.hash = '#sellerBannerPanel';
     setText('sellerAuthStatus', 'Seller login successful.');
     await refreshListings();
+    await refreshSellerOrders();
     await refreshBanners();
     unlockNotificationSound();
   } catch (error) {
@@ -457,6 +583,7 @@ el('sellerSignupForm')?.addEventListener('submit', async (event) => {
     window.location.hash = '#sellerPostingPanel';
     setText('sellerAuthStatus', 'Seller account created and logged in.');
     await refreshListings();
+    await refreshSellerOrders();
     await refreshBanners();
     unlockNotificationSound();
   } catch (error) {
@@ -485,6 +612,9 @@ el('sellerListingForm')?.addEventListener('submit', async (event) => {
       listingType: form.listingType.value,
       sellerType: form.sellerType.value,
       deliveryMode: form.deliveryMode.value,
+      deliveryRatePer10Km: form.deliveryRatePer10Km?.value
+        ? Number(form.deliveryRatePer10Km.value)
+        : undefined,
       paymentModes: paymentModes.length ? paymentModes : ['cod'],
       price: Number(form.price.value || 0),
       city: form.city.value.trim(),
@@ -497,7 +627,7 @@ el('sellerListingForm')?.addEventListener('submit', async (event) => {
     });
 
     const files = Array.from(form.media?.files || []);
-    for (const file of files.slice(0, 5)) {
+    for (const file of files.slice(0, 10)) {
       if (!String(file.type || '').startsWith('image/')) continue;
       await api.uploadListingMedia(listing.id, file);
     }
@@ -535,6 +665,95 @@ el('sellerDetectGpsBtn')?.addEventListener('click', () => {
 
 el('sellerRefreshListingsBtn')?.addEventListener('click', () => refreshListings().catch(() => null));
 el('sellerBannerRefreshBtn')?.addEventListener('click', () => refreshBanners().catch(() => null));
+el('sellerOrdersRefreshBtn')?.addEventListener('click', () => refreshSellerOrders().catch(() => null));
+el('sellerOrdersStatusFilter')?.addEventListener('change', () => refreshSellerOrders().catch(() => null));
+
+el('sellerProfileForm')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!isSellerAccount()) {
+    setText('sellerProfileStatus', 'Seller login required.');
+    return;
+  }
+  const form = event.currentTarget;
+  setText('sellerProfileStatus', 'Saving profile...');
+  try {
+    const result = await api.updateProfile({
+      fullName: form.fullName.value.trim(),
+      phoneNumber: form.phoneNumber.value.trim()
+    });
+    currentUser = result.user || currentUser;
+    setText('sellerAuthBadge', currentUser ? `${currentUser.fullName} (${currentUser.email})` : 'Guest');
+    renderSellerProfile();
+    setText('sellerProfileStatus', 'Profile updated.');
+  } catch (error) {
+    setText('sellerProfileStatus', error.message || 'Unable to update profile');
+  }
+});
+
+el('sellerPasswordForm')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!isSellerAccount()) {
+    setText('sellerPasswordStatus', 'Seller login required.');
+    return;
+  }
+  const form = event.currentTarget;
+  const currentPassword = String(form.currentPassword?.value || '').trim();
+  if (!currentPassword) {
+    setText('sellerPasswordStatus', 'Current password is required.');
+    return;
+  }
+  setText('sellerPasswordStatus', 'Changing password...');
+  try {
+    const result = await api.changePassword({
+      currentPassword,
+      newPassword: form.newPassword.value
+    });
+    form.reset();
+    setText(
+      'sellerPasswordStatus',
+      result?.reauthRequired ? 'Password changed. Please login again.' : 'Password changed.'
+    );
+    if (result?.reauthRequired) {
+      currentUser = null;
+      if (stream) stream.close();
+      window.location.reload();
+    }
+  } catch (error) {
+    setText('sellerPasswordStatus', error.message || 'Unable to change password');
+  }
+});
+
+el('sellerOrdersList')?.addEventListener('click', async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+
+  const viewBtn = target.closest('.seller-order-view-btn');
+  if (viewBtn) {
+    const item = currentSellerOrders.find((row) => Number(row.id) === Number(viewBtn.dataset.id));
+    if (!item) return;
+    window.alert(
+      `Order #${item.id}\nItem: ${item.listingTitle}\nBuyer: ${item.buyerName || item.buyerEmail}\nStatus: ${prettyOrderStatus(
+        item.status
+      )}\nPayment: ${item.paymentMode} (${item.paymentState})\nTotal: ${formatInr(item.payableTotal)}`
+    );
+    return;
+  }
+
+  const statusBtn = target.closest('.seller-order-status-btn');
+  if (!statusBtn) return;
+  const orderId = Number(statusBtn.dataset.id);
+  const status = String(statusBtn.dataset.status || '').trim();
+  if (!orderId || !status) return;
+  try {
+    setText('sellerOrdersStatus', `Updating order #${orderId}...`);
+    await api.updateOrderStatus(orderId, status);
+    setText('sellerOrdersStatus', `Order #${orderId} updated to ${prettyOrderStatus(status)}.`);
+    window.dispatchEvent(new CustomEvent('kp:orders:refresh'));
+    await refreshSellerOrders();
+  } catch (error) {
+    setText('sellerOrdersStatus', error.message || 'Unable to update order status');
+  }
+});
 
 el('sellerListings')?.addEventListener('click', async (event) => {
   const target = event.target;
@@ -568,10 +787,20 @@ el('sellerListings')?.addEventListener('click', async (event) => {
       (item.serviceableCities || []).join(', ')
     );
     if (serviceableCityRaw === null) return;
+    const deliveryRateRaw = window.prompt(
+      'Delivery rate per 10 KM (INR)',
+      String(item.deliveryRatePer10Km ?? 20)
+    );
+    if (deliveryRateRaw === null) return;
 
     const price = Number(priceRaw);
     if (!Number.isFinite(price) || price < 0) {
       setText('sellerListingStatus', 'Invalid price');
+      return;
+    }
+    const deliveryRatePer10Km = Number(deliveryRateRaw);
+    if (!Number.isFinite(deliveryRatePer10Km) || deliveryRatePer10Km < 0) {
+      setText('sellerListingStatus', 'Invalid delivery rate.');
       return;
     }
 
@@ -584,6 +813,7 @@ el('sellerListings')?.addEventListener('click', async (event) => {
         listingType: item.listingType,
         sellerType: item.sellerType || 'student',
         deliveryMode: item.deliveryMode || 'peer_to_peer',
+        deliveryRatePer10Km,
         paymentModes: Array.isArray(item.paymentModes) && item.paymentModes.length ? item.paymentModes : ['cod'],
         price,
         city: city.trim() || item.city || 'Unknown',
@@ -725,6 +955,7 @@ el('sellerLogoutBtn')?.addEventListener('click', async () => {
 
 setInterval(() => {
   if (isSellerAccount()) refreshListings().catch(() => null);
+  if (isSellerAccount()) refreshSellerOrders().catch(() => null);
   if (isBannerManager()) refreshBanners().catch(() => null);
 }, 20000);
 
@@ -756,6 +987,7 @@ handlePortalSwitchSession()
       );
     }
     await refreshListings();
+    await refreshSellerOrders();
     await refreshBanners();
     syncTabView();
   })

@@ -9,6 +9,7 @@ export function initAuth({ state, onAuthChanged }) {
   const authBadge = el('authBadge');
   const communityNavLink = el('communityNavLink');
   const aiNavLink = el('aiNavLink');
+  const ordersNavLink = el('ordersNavLink');
   const supportNavLink = el('supportNavLink');
   const authStatus = el('authStatus');
   const loginForm = el('loginForm');
@@ -22,6 +23,7 @@ export function initAuth({ state, onAuthChanged }) {
       if (logoutBtn) logoutBtn.hidden = false;
       if (communityNavLink) communityNavLink.hidden = false;
       if (aiNavLink) aiNavLink.hidden = false;
+      if (ordersNavLink) ordersNavLink.hidden = false;
       if (supportNavLink) supportNavLink.hidden = false;
       if (authBadge) {
         authBadge.textContent = `Hi ${state.user.fullName}`;
@@ -33,6 +35,7 @@ export function initAuth({ state, onAuthChanged }) {
       if (logoutBtn) logoutBtn.hidden = true;
       if (communityNavLink) communityNavLink.hidden = true;
       if (aiNavLink) aiNavLink.hidden = true;
+      if (ordersNavLink) ordersNavLink.hidden = true;
       if (supportNavLink) supportNavLink.hidden = true;
       if (authBadge) {
         authBadge.textContent = 'Guest Mode';
@@ -176,6 +179,8 @@ export function initAuth({ state, onAuthChanged }) {
       setText('authStatus', error.message || 'Unable to generate TOTP QR');
     }
   });
+
+  renderAuth();
 
   return {
     openAuthModal: openModal,

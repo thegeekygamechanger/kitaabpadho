@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0d4cb1" />
     <title>&#x1F4DA; Delivery Executive Portal | KitaabPadho</title>
     <link rel="icon" type="image/svg+xml" href="/assets/icons/bookish.svg" />
-    <link rel="stylesheet" href="/assets/css/app.css?v=20260226d" />
+    <link rel="stylesheet" href="/assets/css/app.css?v=20260226f" />
   </head>
   <body>
     <header class="kb-header">
@@ -27,6 +27,9 @@
       </div>
       <nav id="deliveryPortalNav" class="kb-nav hidden">
         <a id="deliveryJobsNav" class="active" href="#deliveryJobsPanel">Delivery Jobs</a>
+        <a id="deliveryWorkNav" href="#deliveryWorkPanel">Work</a>
+        <a id="deliveryOrdersNav" href="#deliveryOrdersPanel">Orders</a>
+        <a id="deliveryProfileNav" href="#deliveryProfilePanel">Profile</a>
         <a id="deliverySupportNav" href="#deliverySupportPanel">Customer Service</a>
         <span id="deliveryAuthBadge" class="kb-badge">Guest</span>
       </nav>
@@ -75,6 +78,51 @@
         <div id="deliveryJobs" class="cards"></div>
       </section>
 
+      <section id="deliveryWorkPanel" class="panel hidden">
+        <div class="panel-head">
+          <h2>Work Queue</h2>
+          <button id="deliveryWorkRefreshBtn" class="kb-btn kb-btn-ghost" type="button">Refresh</button>
+        </div>
+        <p id="deliveryWorkStatus" class="muted">Claim a job first. Claimed jobs appear here for in-progress workflow.</p>
+        <div id="deliveryWorkList" class="cards"></div>
+      </section>
+
+      <section id="deliveryOrdersPanel" class="panel hidden">
+        <div class="panel-head">
+          <h2>Assigned Orders</h2>
+          <div class="drawer-actions">
+            <select id="deliveryOrdersStatusFilter" class="kb-select">
+              <option value="">All Status</option>
+              <option value="shipping">Shipping</option>
+              <option value="out_for_delivery">Out for Delivery</option>
+              <option value="delivered">Delivered</option>
+            </select>
+            <button id="deliveryOrdersRefreshBtn" class="kb-btn kb-btn-ghost" type="button">Refresh</button>
+          </div>
+        </div>
+        <p id="deliveryOrdersStatus" class="muted">Login as delivery partner to manage order workflow.</p>
+        <div id="deliveryOrdersList" class="cards"></div>
+      </section>
+
+      <section id="deliveryProfilePanel" class="panel hidden">
+        <div class="panel-head">
+          <h2>Delivery Profile</h2>
+        </div>
+        <form id="deliveryProfileForm" class="drawer" style="max-width:520px">
+          <input class="kb-input" name="fullName" placeholder="Full name" required />
+          <input class="kb-input" name="email" type="email" placeholder="Email" readonly />
+          <input class="kb-input" name="phoneNumber" type="tel" placeholder="Phone number" required />
+          <button class="kb-btn kb-btn-primary" type="submit">Save Profile</button>
+          <p id="deliveryProfileStatus" class="muted"></p>
+        </form>
+        <form id="deliveryPasswordForm" class="drawer" style="max-width:520px">
+          <input class="kb-input" name="currentPassword" type="password" placeholder="Current password" />
+          <input class="kb-input" name="newPassword" type="password" placeholder="New password (min 8)" required />
+          <button class="kb-btn kb-btn-dark" type="submit">Change Password</button>
+          <p id="deliveryPasswordStatus" class="muted"></p>
+        </form>
+      </section>
+
       <section id="deliverySupportPanel" class="panel hidden">
         <div class="panel-head">
           <h2>Customer Service Query</h2>
@@ -99,8 +147,9 @@
       <p>Made by UPSC aspirant. Built for learners across India. KitaabPadhoIndia. @2026 copyright</p>
     </footer>
 
-    <script type="module" src="/assets/js/delivery.js?v=20260226d"></script>
+    <script type="module" src="/assets/js/delivery.js?v=20260226f"></script>
   </body>
 </html>
+
 
 

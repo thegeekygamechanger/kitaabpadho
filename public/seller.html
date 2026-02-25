@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f6fe5" />
     <title>&#x1F4DA; Seller Portal | KitaabPadho</title>
     <link rel="icon" type="image/svg+xml" href="/assets/icons/bookish.svg" />
-    <link rel="stylesheet" href="/assets/css/app.css?v=20260226d" />
+    <link rel="stylesheet" href="/assets/css/app.css?v=20260226f" />
   </head>
   <body>
     <header class="kb-header">
@@ -26,6 +26,8 @@
       </div>
       <nav id="sellerPortalNav" class="kb-nav hidden">
         <a id="sellerWorkspaceNav" class="active" href="#sellerPostingPanel">Seller Workspace</a>
+        <a id="sellerOrdersNav" href="#sellerOrdersPanel">Orders</a>
+        <a id="sellerProfileNav" href="#sellerProfilePanel">Profile</a>
         <a id="sellerBannerNav" href="#sellerBannerPanel">Banners</a>
         <a id="sellerSupportNav" href="#sellerSupportPanel">Customer Service</a>
         <span id="sellerAuthBadge" class="kb-badge">Guest</span>
@@ -91,6 +93,15 @@
               <option value="kpi_dedicated">KPI Dedicated</option>
             </select>
             <input name="price" class="kb-input" type="number" min="0" step="0.01" placeholder="Price" required />
+            <input
+              name="deliveryRatePer10Km"
+              class="kb-input"
+              type="number"
+              min="0"
+              max="500"
+              step="0.01"
+              placeholder="Delivery rate (INR per 10 KM, optional)"
+            />
             <select id="sellerServiceLocation" name="serviceLocation" class="kb-select" required>
               <option value="">Use GPS to load serviceable localities</option>
             </select>
@@ -135,6 +146,45 @@
           <button id="sellerRefreshListingsBtn" class="kb-btn kb-btn-ghost" type="button">Refresh</button>
         </div>
         <div id="sellerListings" class="cards"></div>
+      </section>
+
+      <section id="sellerOrdersPanel" class="panel hidden">
+        <div class="panel-head">
+          <h2>Seller Orders</h2>
+          <div class="drawer-actions">
+            <select id="sellerOrdersStatusFilter" class="kb-select">
+              <option value="">All Status</option>
+              <option value="received">Received</option>
+              <option value="packing">Packing</option>
+              <option value="shipping">Shipping</option>
+              <option value="out_for_delivery">Out for Delivery</option>
+              <option value="delivered">Delivered</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+            <button id="sellerOrdersRefreshBtn" class="kb-btn kb-btn-ghost" type="button">Refresh</button>
+          </div>
+        </div>
+        <p id="sellerOrdersStatus" class="muted">Login as seller to manage order workflow.</p>
+        <div id="sellerOrdersList" class="cards"></div>
+      </section>
+
+      <section id="sellerProfilePanel" class="panel hidden">
+        <div class="panel-head">
+          <h2>Seller Profile</h2>
+        </div>
+        <form id="sellerProfileForm" class="drawer" style="max-width:520px">
+          <input class="kb-input" name="fullName" placeholder="Full name" required />
+          <input class="kb-input" name="email" type="email" placeholder="Email" readonly />
+          <input class="kb-input" name="phoneNumber" type="tel" placeholder="Phone number" required />
+          <button class="kb-btn kb-btn-primary" type="submit">Save Profile</button>
+          <p id="sellerProfileStatus" class="muted"></p>
+        </form>
+        <form id="sellerPasswordForm" class="drawer" style="max-width:520px">
+          <input class="kb-input" name="currentPassword" type="password" placeholder="Current password" />
+          <input class="kb-input" name="newPassword" type="password" placeholder="New password (min 8)" required />
+          <button class="kb-btn kb-btn-dark" type="submit">Change Password</button>
+          <p id="sellerPasswordStatus" class="muted"></p>
+        </form>
       </section>
 
       <section id="sellerBannerPanel" class="panel hidden">
@@ -188,8 +238,9 @@
       <p>Made by UPSC aspirant. Built for learners across India. KitaabPadhoIndia. @2026 copyright</p>
     </footer>
 
-    <script type="module" src="/assets/js/seller.js?v=20260226d"></script>
+    <script type="module" src="/assets/js/seller.js?v=20260226f"></script>
   </body>
 </html>
+
 
 

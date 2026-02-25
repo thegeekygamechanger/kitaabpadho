@@ -1,6 +1,8 @@
 import { api } from './api.js';
 import { el, escapeHtml, formatInr, hideModal, renderEmpty, showModal } from './ui.js';
 
+const ONLINE_PAYMENT_MODES = new Set(['upi', 'card', 'razorpay']);
+
 function mediaPreview(media = []) {
   const first = media[0];
   if (!first) return '<div class="card-media"><strong>No Media</strong></div>';
@@ -35,7 +37,60 @@ function asUniqueLocationOptions({ nearbyCities = [], localityOptions = [] } = {
   return options.slice(0, 40);
 }
 
-export function initMarketplace({ state }) {
+function haversineDistanceKm(fromLat, fromLon, toLat, toLon) {
+  const lat1 = Number(fromLat);
+  const lon1 = Number(fromLon);
+  const lat2 = Number(toLat);
+  const lon2 = Number(toLon);
+  if (![lat1, lon1, lat2, lon2].every((value) => Number.isFinite(value))) return 0;
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 6371 * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+function normalizePaymentModes(rawModes) {
+  const normalized = [];
+  for (const item of Array.isArray(rawModes) ? rawModes : []) {
+    const mode = String(item || '').trim().toLowerCase();
+    if (!mode) continue;
+    if (!['cod', 'upi', 'card', 'razorpay'].includes(mode)) continue;
+    if (normalized.includes(mode)) continue;
+    normalized.push(mode);
+  }
+  if (!normalized.length) normalized.push('cod');
+  return normalized;
+}
+
+function paymentModeLabel(mode) {
+  if (mode === 'cod') return 'Cash on Delivery';
+  return 'Online Payment (UPI / Card)';
+}
+
+function prettyPaymentModes(modes) {
+  if (!Array.isArray(modes) || !modes.length) return 'cash on delivery';
+  const hasCod = modes.includes('cod');
+  const hasOnline = modes.some((mode) => ONLINE_PAYMENT_MODES.has(mode));
+  if (hasCod && hasOnline) return 'cash on delivery, online payment';
+  if (hasOnline) return 'online payment';
+  return 'cash on delivery';
+}
+
+function statusRail(status = '') {
+  const flow = ['received', 'packing', 'shipping', 'out_for_delivery', 'delivered'];
+  if (status === 'cancelled') {
+    return `<div class="order-status-rail"><span class="order-step current">cancelled</span></div>`;
+  }
+  const currentIndex = flow.indexOf(status);
+  return `<div class="order-status-rail">${flow
+    .map((step, index) => `<span class="order-step${index === currentIndex ? ' current' : ''}">${escapeHtml(step.replaceAll('_', ' '))}</span>`)
+    .join('')}</div>`;
+}
+
+export function initMarketplace({ state, openAuthModal }) {
   const listingsGrid = el('listingsGrid');
   const categoryFilter = el('categoryFilter');
   const sellerTypeFilter = el('sellerTypeFilter');
@@ -45,8 +100,15 @@ export function initMarketplace({ state }) {
   const applyListingFiltersBtn = el('applyListingFiltersBtn');
   const closeListingDetailBtn = el('closeListingDetailBtn');
   const listingDetailContent = el('listingDetailContent');
+
   let currentListing = null;
   let geoCityOptions = [];
+  let currentListingImages = [];
+  let currentImageIndex = 0;
+  let checkoutQuantity = 1;
+  let checkoutPaymentMode = 'cod';
+  let checkoutStatus = '';
+  let checkoutOrder = null;
 
   function canManageListing(listing) {
     if (!state.user || !listing) return false;
@@ -119,6 +181,160 @@ export function initMarketplace({ state }) {
     });
   }
 
+  function calculateCheckoutTotals(listing) {
+    const quantity = Math.min(10, Math.max(1, Number(checkoutQuantity || 1)));
+    checkoutQuantity = quantity;
+    const unitPrice = Number(listing?.price || 0);
+    const itemTotal = unitPrice * quantity;
+    let distanceKm = typeof listing?.distanceKm === 'number' ? Number(listing.distanceKm) : 0;
+    if (!(distanceKm > 0) && state.location?.coords && listing?.latitude && listing?.longitude) {
+      distanceKm = haversineDistanceKm(
+        state.location.coords.lat,
+        state.location.coords.lon,
+        Number(listing.latitude),
+        Number(listing.longitude)
+      );
+    }
+    const deliveryRatePer10Km = Math.max(0, Number(listing?.deliveryRatePer10Km || 20));
+    const deliveryCharge = distanceKm > 0 ? Math.ceil(distanceKm / 10) * deliveryRatePer10Km : 0;
+    const payableTotal = itemTotal + deliveryCharge;
+    return {
+      quantity,
+      unitPrice,
+      itemTotal,
+      distanceKm,
+      deliveryRatePer10Km,
+      deliveryCharge,
+      payableTotal
+    };
+  }
+
+  function setImageAt(index) {
+    if (!currentListingImages.length) {
+      currentImageIndex = 0;
+      return;
+    }
+    const max = currentListingImages.length - 1;
+    currentImageIndex = Math.min(max, Math.max(0, index));
+  }
+
+  function renderListingDetail() {
+    if (!currentListing) return;
+    const listing = currentListing;
+    const canManage = canManageListing(listing);
+    const media = Array.isArray(listing.media) ? listing.media : [];
+    const imageMedia = media.filter((item) => item.mediaType?.startsWith('image/') && item.url).slice(0, 10);
+    currentListingImages = imageMedia.map((item) => item.url);
+    if (!currentListingImages.length) currentImageIndex = 0;
+    setImageAt(currentImageIndex);
+
+    const actionLabel = primaryActionLabel(listing.listingType);
+    const chips = [
+      `<span class="pill ${listingTypeClass(listing.listingType)}">${escapeHtml(listing.listingType || 'buy')}</span>`,
+      `<span class="pill type-buy">${escapeHtml(listing.category || 'stationery')}</span>`,
+      `<span class="pill type-rent">${escapeHtml(listing.sellerType || 'student')}</span>`,
+      listing.publishIndia ? `<span class="pill type-sell">India</span>` : ''
+    ].join('');
+
+    const paymentModes = normalizePaymentModes(listing.paymentModes);
+    if (!paymentModes.includes(checkoutPaymentMode)) {
+      checkoutPaymentMode = paymentModes.includes('cod') ? 'cod' : paymentModes[0];
+    }
+
+    const checkout = calculateCheckoutTotals(listing);
+    const isOnlineSelected = ONLINE_PAYMENT_MODES.has(checkoutPaymentMode);
+    const checkoutOrderStatus = checkoutOrder
+      ? `Order #${checkoutOrder.id} created. Current status: ${String(checkoutOrder.status || 'received').replaceAll('_', ' ')}.`
+      : '';
+    const mediaCounter =
+      currentListingImages.length > 1
+        ? `<span class="listing-image-counter">${currentImageIndex + 1}/${currentListingImages.length}</span>`
+        : '';
+
+    listingDetailContent.innerHTML = `
+      <article class="listing-detail">
+        <div class="listing-detail-media">
+          <div class="listing-detail-main-media">
+            ${
+              currentListingImages[currentImageIndex]
+                ? `<img id="listingDetailMainImage" src="${escapeHtml(currentListingImages[currentImageIndex])}" alt="${escapeHtml(listing.title || 'Listing image')}" />`
+                : `<div class="listing-detail-no-media">No product image uploaded</div>`
+            }
+            ${
+              currentListingImages.length > 1
+                ? `<button class="listing-carousel-btn prev" type="button" data-dir="-1" aria-label="Previous image">&#8249;</button>
+                   <button class="listing-carousel-btn next" type="button" data-dir="1" aria-label="Next image">&#8250;</button>
+                   ${mediaCounter}`
+                : ''
+            }
+          </div>
+          ${
+            imageMedia.length > 1
+              ? `<div class="listing-detail-thumb-row">
+                  ${imageMedia
+                    .map(
+                      (item, index) => `<button class="listing-thumb-btn" type="button" data-index="${index}" data-url="${escapeHtml(item.url)}">
+                        <img src="${escapeHtml(item.url)}" alt="listing thumb" />
+                      </button>`
+                    )
+                    .join('')}
+                </div>`
+              : ''
+          }
+        </div>
+        <div class="listing-detail-info">
+          <h3>${escapeHtml(listing.title)}</h3>
+          <div class="card-meta">${chips}</div>
+          <p class="listing-detail-price">${formatInr(listing.price)}</p>
+          <p class="muted">Seller: ${escapeHtml(listing.ownerName || 'Student')} ${listing.ownerEmail ? `(${escapeHtml(listing.ownerEmail)})` : ''}</p>
+          <p class="muted">Location: ${escapeHtml(listing.city || 'Unknown')} | ${escapeHtml((listing.areaCode || 'unknown').replaceAll('_', ' '))}</p>
+          <p class="muted">Delivery: ${escapeHtml(listing.deliveryMode || 'peer_to_peer')} | Payments: ${escapeHtml(prettyPaymentModes(paymentModes))}</p>
+          <p class="listing-detail-description">${escapeHtml(listing.description || '')}</p>
+
+          <section class="checkout-box">
+            <h4>${actionLabel} Checkout</h4>
+            <div class="checkout-grid">
+              <label class="field-label" for="checkoutQtyInput">Quantity</label>
+              <label class="field-label" for="checkoutPaymentModeSelect">Payment Method</label>
+              <input id="checkoutQtyInput" class="kb-input" type="number" min="1" max="10" value="${checkout.quantity}" />
+              <select id="checkoutPaymentModeSelect" class="kb-select">
+                ${paymentModes
+                  .map(
+                    (mode) =>
+                      `<option value="${escapeHtml(mode)}" ${mode === checkoutPaymentMode ? 'selected' : ''}>${escapeHtml(paymentModeLabel(mode))}</option>`
+                  )
+                  .join('')}
+              </select>
+            </div>
+            <div class="checkout-summary">
+              <span>Item Total: ${formatInr(checkout.itemTotal)}</span>
+              <span>Distance: ${escapeHtml(checkout.distanceKm > 0 ? `${checkout.distanceKm.toFixed(1)} km` : 'not detected')}</span>
+              <span>Delivery Charge (${formatInr(checkout.deliveryRatePer10Km)} per 10 KM): ${formatInr(checkout.deliveryCharge)}</span>
+              <strong>Total Payable: ${formatInr(checkout.payableTotal)}</strong>
+            </div>
+            ${checkoutOrder ? statusRail(checkoutOrder.status) : ''}
+            <div class="drawer-actions">
+              <button class="kb-btn kb-btn-primary place-order-btn" data-id="${listing.id}" type="button">${actionLabel}</button>
+              ${
+                checkoutOrder && isOnlineSelected
+                  ? `<button class="kb-btn kb-btn-dark pay-online-final-btn" data-order-id="${checkoutOrder.id}" type="button">Pay Online (Final Step)</button>`
+                  : ''
+              }
+              ${
+                canManage
+                  ? `<button class="kb-btn kb-btn-dark edit-listing-btn" data-id="${listing.id}" type="button">Edit</button>
+                     <button class="kb-btn kb-btn-dark delete-listing-btn" data-id="${listing.id}" type="button">Delete</button>`
+                  : ''
+              }
+            </div>
+            <p class="muted">${escapeHtml(checkoutStatus || checkoutOrderStatus)}</p>
+          </section>
+        </div>
+      </article>
+    `;
+    showModal('listingDetailModal');
+  }
+
   function renderListings(items) {
     if (!Array.isArray(items) || items.length === 0) {
       listingsGrid.innerHTML = renderEmpty('No listings found for these filters.');
@@ -147,9 +363,7 @@ export function initMarketplace({ state }) {
             <div class="card-price">${formatInr(item.price)}</div>
             <p class="muted">${escapeHtml(String(item.description || '').slice(0, 90))}</p>
             <div class="card-actions">
-              <button class="kb-btn kb-btn-primary view-listing-btn" type="button" data-id="${item.id}">${primaryActionLabel(
-                item.listingType
-              )}</button>
+              <button class="kb-btn kb-btn-primary view-listing-btn" type="button" data-id="${item.id}">${primaryActionLabel(item.listingType)}</button>
               <button class="kb-btn kb-btn-dark view-listing-btn" type="button" data-id="${item.id}">View Details</button>
             </div>
           </div>
@@ -173,79 +387,13 @@ export function initMarketplace({ state }) {
     try {
       const listing = await api.listingById(listingId);
       currentListing = listing;
-      const canManage = canManageListing(listing);
-      const media = Array.isArray(listing.media) ? listing.media : [];
-      const imageMedia = media.filter((item) => item.mediaType?.startsWith('image/') && item.url);
-      const heroMedia = imageMedia[0];
-      const actionLabel = primaryActionLabel(listing.listingType);
-      const chips = [
-        `<span class="pill ${listingTypeClass(listing.listingType)}">${escapeHtml(listing.listingType || 'buy')}</span>`,
-        `<span class="pill type-buy">${escapeHtml(listing.category || 'stationery')}</span>`,
-        `<span class="pill type-rent">${escapeHtml(listing.sellerType || 'student')}</span>`,
-        listing.publishIndia ? `<span class="pill type-sell">India</span>` : ''
-      ].join('');
-      const paymentText =
-        Array.isArray(listing.paymentModes) && listing.paymentModes.length ? listing.paymentModes.join(', ') : 'cod';
-
-      listingDetailContent.innerHTML = `
-        <article class="listing-detail">
-          <div class="listing-detail-media">
-            <div class="listing-detail-main-media">
-              ${
-                heroMedia
-                  ? `<img id="listingDetailMainImage" src="${escapeHtml(heroMedia.url)}" alt="${escapeHtml(listing.title || 'Listing image')}" />`
-                  : `<div class="listing-detail-no-media">No product image uploaded</div>`
-              }
-            </div>
-            ${
-              imageMedia.length > 1
-                ? `<div class="listing-detail-thumb-row">
-                    ${imageMedia
-                      .slice(0, 8)
-                      .map(
-                        (item) => `<button class="listing-thumb-btn" type="button" data-url="${escapeHtml(item.url)}">
-                          <img src="${escapeHtml(item.url)}" alt="listing thumb" />
-                        </button>`
-                      )
-                      .join('')}
-                  </div>`
-                : ''
-            }
-          </div>
-          <div class="listing-detail-info">
-            <h3>${escapeHtml(listing.title)}</h3>
-            <div class="card-meta">${chips}</div>
-            <p class="listing-detail-price">${formatInr(listing.price)}</p>
-            <p class="muted">Seller: ${escapeHtml(listing.ownerName || 'Student')} ${listing.ownerEmail ? `(${escapeHtml(listing.ownerEmail)})` : ''}</p>
-            <p class="muted">Location: ${escapeHtml(listing.city || 'Unknown')} | ${escapeHtml(
-              (listing.areaCode || 'unknown').replaceAll('_', ' ')
-            )}</p>
-            <p class="muted">Serviceable Areas: ${escapeHtml((listing.serviceableAreaCodes || []).join(', ') || '-')}</p>
-            <p class="muted">Serviceable Cities: ${escapeHtml((listing.serviceableCities || []).join(', ') || '-')}</p>
-            <p class="muted">Delivery: ${escapeHtml(listing.deliveryMode || 'peer_to_peer')} | Payments: ${escapeHtml(paymentText)}</p>
-            <p class="listing-detail-description">${escapeHtml(listing.description || '')}</p>
-            <div class="drawer-actions">
-              <button class="kb-btn kb-btn-primary listing-primary-action-btn" data-id="${listing.id}" data-amount="${Number(
-        listing.price || 0
-      )}" data-kind="${escapeHtml(listing.listingType || 'buy')}" type="button">
-                ${actionLabel}
-              </button>
-              <button class="kb-btn kb-btn-dark razorpay-order-btn" data-id="${listing.id}" data-amount="${Number(
-        listing.price || 0
-      )}" type="button">
-                Create Razorpay Order
-              </button>
-              ${
-                canManage
-                  ? `<button class="kb-btn kb-btn-dark edit-listing-btn" data-id="${listing.id}" type="button">Edit</button>
-                     <button class="kb-btn kb-btn-dark delete-listing-btn" data-id="${listing.id}" type="button">Delete</button>`
-                  : ''
-              }
-            </div>
-          </div>
-        </article>
-      `;
-      showModal('listingDetailModal');
+      currentImageIndex = 0;
+      checkoutQuantity = 1;
+      checkoutStatus = '';
+      checkoutOrder = null;
+      const modes = normalizePaymentModes(listing.paymentModes);
+      checkoutPaymentMode = modes.includes('cod') ? 'cod' : modes[0];
+      renderListingDetail();
     } catch (error) {
       currentListing = null;
       listingDetailContent.innerHTML = `<p class="state-error">${escapeHtml(error.message)}</p>`;
@@ -291,47 +439,98 @@ export function initMarketplace({ state }) {
     openListingDetails(button.dataset.id);
   });
 
+  listingDetailContent?.addEventListener('change', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.id === 'checkoutQtyInput') {
+      checkoutQuantity = Math.min(10, Math.max(1, Number(target.value || 1)));
+      renderListingDetail();
+      return;
+    }
+    if (target.id === 'checkoutPaymentModeSelect') {
+      checkoutPaymentMode = String(target.value || 'cod').toLowerCase();
+      renderListingDetail();
+    }
+  });
+
   listingDetailContent?.addEventListener('click', async (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
+
     const thumbBtn = target.closest('.listing-thumb-btn');
     if (thumbBtn) {
-      const mainImage = el('listingDetailMainImage');
-      const nextUrl = thumbBtn.dataset.url || '';
-      if (mainImage instanceof HTMLImageElement && nextUrl) mainImage.src = nextUrl;
+      const index = Number(thumbBtn.dataset.index || 0);
+      setImageAt(index);
+      renderListingDetail();
       return;
     }
 
-    const primaryActionBtn = target.closest('.listing-primary-action-btn');
-    if (primaryActionBtn) {
+    const carouselBtn = target.closest('.listing-carousel-btn');
+    if (carouselBtn) {
+      const dir = Number(carouselBtn.dataset.dir || 1);
+      setImageAt(currentImageIndex + dir);
+      if (currentImageIndex < 0) currentImageIndex = 0;
+      if (currentImageIndex >= currentListingImages.length) currentImageIndex = currentListingImages.length - 1;
+      renderListingDetail();
+      return;
+    }
+
+    const placeOrderBtn = target.closest('.place-order-btn');
+    if (placeOrderBtn) {
+      if (!state.user?.id) {
+        openAuthModal?.('Login required to place order.');
+        return;
+      }
+      if (!currentListing) return;
+      const payload = {
+        listingId: currentListing.id,
+        quantity: checkoutQuantity,
+        paymentMode: checkoutPaymentMode,
+        buyerLat: state.location?.coords?.lat,
+        buyerLon: state.location?.coords?.lon,
+        buyerCity: state.location?.selectedCity || state.marketplace?.city || '',
+        buyerAreaCode: state.location?.areaCode || ''
+      };
+      checkoutStatus = 'Placing order...';
+      renderListingDetail();
       try {
-        const amount = Number(primaryActionBtn.dataset.amount || 0);
-        const listingId = primaryActionBtn.dataset.id || '';
-        const actionKind = primaryActionBtn.dataset.kind === 'rent' ? 'rent' : 'buy';
-        const result = await api.createRazorpayOrder({
-          amount,
-          receipt: `${actionKind}-${listingId}-${Date.now()}`
-        });
-        window.alert(`${actionKind === 'rent' ? 'Rent' : 'Buy'} order ready: ${result.order?.id || 'N/A'}`);
+        const result = await api.createMarketplaceOrder(payload);
+        checkoutOrder = result.order || null;
+        checkoutStatus = checkoutOrder
+          ? `Order #${checkoutOrder.id} placed successfully.`
+          : 'Order placed successfully.';
+        window.dispatchEvent(new CustomEvent('kp:orders:refresh'));
+        if (!ONLINE_PAYMENT_MODES.has(checkoutPaymentMode)) {
+          window.location.hash = '#ordersPanel';
+        }
+        renderListingDetail();
       } catch (error) {
-        window.alert(error.message || 'Unable to create order');
+        if (Number(error.status) === 401) {
+          openAuthModal?.('Login required to place order.');
+          return;
+        }
+        checkoutStatus = error.message || 'Unable to place order';
+        renderListingDetail();
       }
       return;
     }
 
-    const button = target.closest('.razorpay-order-btn');
-    if (button) {
+    const payOnlineBtn = target.closest('.pay-online-final-btn');
+    if (payOnlineBtn) {
+      const orderId = Number(payOnlineBtn.dataset.orderId || 0);
+      if (!orderId) return;
+      checkoutStatus = 'Creating Razorpay payment order...';
+      renderListingDetail();
       try {
-        const amount = Number(button.dataset.amount || 0);
-        const listingId = button.dataset.id || '';
-        const result = await api.createRazorpayOrder({
-          amount,
-          receipt: `listing-${listingId}-${Date.now()}`
-        });
-        window.alert(`Razorpay order created: ${result.order?.id || 'N/A'}`);
+        const result = await api.createOrderRazorpayPayment(orderId);
+        checkoutOrder = result.order || checkoutOrder;
+        checkoutStatus = `Razorpay payment order ready: ${result.paymentOrder?.id || 'N/A'}`;
+        window.alert(`Razorpay order created: ${result.paymentOrder?.id || 'N/A'}`);
+        window.dispatchEvent(new CustomEvent('kp:orders:refresh'));
       } catch (error) {
-        window.alert(error.message || 'Unable to create Razorpay order');
+        checkoutStatus = error.message || 'Unable to start online payment';
       }
+      renderListingDetail();
       return;
     }
 
@@ -361,6 +560,7 @@ export function initMarketplace({ state }) {
           listingType: currentListing.listingType,
           sellerType: currentListing.sellerType || 'student',
           deliveryMode: currentListing.deliveryMode || 'peer_to_peer',
+          deliveryRatePer10Km: Number(currentListing.deliveryRatePer10Km || 20),
           paymentModes:
             Array.isArray(currentListing.paymentModes) && currentListing.paymentModes.length
               ? currentListing.paymentModes
@@ -402,6 +602,10 @@ export function initMarketplace({ state }) {
 
   closeListingDetailBtn?.addEventListener('click', () => {
     currentListing = null;
+    currentListingImages = [];
+    currentImageIndex = 0;
+    checkoutOrder = null;
+    checkoutStatus = '';
     hideModal('listingDetailModal');
   });
 

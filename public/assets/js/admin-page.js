@@ -33,7 +33,9 @@ const crudState = {
   comments: [],
   deliveryJobs: [],
   banners: [],
-  feedback: []
+  feedback: [],
+  users: [],
+  adminUser: null
 };
 
 initFormEnhancements();
@@ -43,11 +45,12 @@ try {
   // ignore storage restriction
 }
 
-const ADMIN_TAB_IDS = ['adminMainPanel', 'adminBannerPanel', 'adminSupportPanel'];
+const ADMIN_TAB_IDS = ['adminMainPanel', 'adminBannerPanel', 'adminSupportPanel', 'adminProfilePanel'];
 const ADMIN_TAB_LINK_IDS = {
   adminMainPanel: 'adminActionsNav',
   adminBannerPanel: 'adminBannerNav',
-  adminSupportPanel: 'adminSupportNav'
+  adminSupportPanel: 'adminSupportNav',
+  adminProfilePanel: 'adminProfileNav'
 };
 
 function syncAdminTabs() {
@@ -93,7 +96,7 @@ function syncAdminTabs() {
 
 function syncAdminHeader(authenticated, isAdmin) {
   const logoutBtn = el('adminLogoutBtn');
-  if (logoutBtn) logoutBtn.hidden = !authenticated;
+  if (logoutBtn) logoutBtn.hidden = !isAdmin;
   el('adminPortalNav')?.classList.toggle('hidden', !isAdmin);
 }
 
@@ -262,6 +265,47 @@ function renderFeedbackList(items) {
     .join('');
 }
 
+function renderUsersList(items) {
+  const node = el('adminUsersList');
+  if (!node) return;
+  if (!Array.isArray(items) || !items.length) {
+    node.innerHTML = `<article class="state-empty">No users found.</article>`;
+    return;
+  }
+  node.innerHTML = items
+    .map((item) => {
+      return `<article class="card">
+        <div class="card-body">
+          <div class="card-meta">
+            <span class="pill type-buy">${escapeHtml(item.role || 'student')}</span>
+            <span class="muted">${item.totpEnabled ? 'totp:on' : 'totp:off'}</span>
+            <span class="muted">${item.pushEnabled ? 'push:on' : 'push:off'}</span>
+          </div>
+          <h3 class="card-title">${escapeHtml(item.fullName || '')}</h3>
+          <p class="muted">${escapeHtml(item.email || '')}</p>
+          <p class="muted">${escapeHtml(item.phoneNumber || '-')}</p>
+          <p class="muted">Joined: ${escapeHtml(fmtTime(item.createdAt))}</p>
+          <div class="card-actions">
+            <button class="kb-btn kb-btn-ghost admin-user-action-btn" data-action="view" data-id="${item.id}" type="button">View</button>
+            <button class="kb-btn kb-btn-ghost admin-user-action-btn" data-action="history" data-id="${item.id}" type="button">History</button>
+            <button class="kb-btn kb-btn-dark admin-user-action-btn" data-action="edit" data-id="${item.id}" type="button">Edit</button>
+            <button class="kb-btn kb-btn-dark admin-user-action-btn" data-action="resetPassword" data-id="${item.id}" type="button">Reset Password</button>
+            <button class="kb-btn kb-btn-dark admin-user-action-btn" data-action="delete" data-id="${item.id}" type="button">Delete</button>
+          </div>
+        </div>
+      </article>`;
+    })
+    .join('');
+}
+
+function renderAdminProfile() {
+  const form = el('adminProfileForm');
+  if (!form || !crudState.adminUser) return;
+  if (form.fullName) form.fullName.value = crudState.adminUser.fullName || '';
+  if (form.email) form.email.value = crudState.adminUser.email || '';
+  if (form.phoneNumber) form.phoneNumber.value = crudState.adminUser.phoneNumber || '';
+}
+
 function getFilters() {
   return {
     q: el('adminSearchInput')?.value.trim() || '',
@@ -360,6 +404,29 @@ async function refreshFeedbackData() {
   }
 }
 
+async function refreshUsersData() {
+  try {
+    const q = el('adminUsersSearchInput')?.value.trim() || '';
+    const result = await api.listAdminUsers({ q: q || undefined, limit: 80, offset: 0 });
+    crudState.users = Array.isArray(result.data) ? result.data : [];
+    renderUsersList(crudState.users);
+    setText('adminUsersStatus', `Users loaded: ${crudState.users.length}`);
+  } catch (error) {
+    setText('adminUsersStatus', error.message || 'Unable to load users');
+  }
+}
+
+async function refreshDeliveryRateData() {
+  try {
+    const result = await api.getDeliveryRateSetting();
+    const input = el('adminDeliveryRateInput');
+    if (input) input.value = String(result.amountPer10Km ?? 20);
+    setText('adminDeliveryRateStatus', `Current delivery rate: INR ${fmtNumber(result.amountPer10Km || 0)} per 10 KM`);
+  } catch (error) {
+    setText('adminDeliveryRateStatus', error.message || 'Unable to load delivery rate');
+  }
+}
+
 function findCrudItem(kind, id) {
   const numericId = Number(id);
   if (kind === 'listing') return crudState.listings.find((item) => Number(item.id) === numericId);
@@ -367,6 +434,83 @@ function findCrudItem(kind, id) {
   if (kind === 'comment') return crudState.comments.find((item) => Number(item.id) === numericId);
   if (kind === 'delivery') return crudState.deliveryJobs.find((item) => Number(item.id) === numericId);
   return null;
+}
+
+function findUserItem(id) {
+  return crudState.users.find((item) => Number(item.id) === Number(id));
+}
+
+async function handleAdminUserAction(action, id) {
+  const user = findUserItem(id);
+  if (!user) {
+    setText('adminUsersStatus', 'User not found.');
+    return;
+  }
+
+  if (action === 'view') {
+    const result = await api.adminUserById(user.id);
+    const detail = result.user || user;
+    window.alert(
+      `User #${detail.id}\n${detail.fullName}\n${detail.email}\nRole: ${detail.role}\nPhone: ${detail.phoneNumber || '-'}\nTOTP: ${
+        detail.totpEnabled ? 'enabled' : 'disabled'
+      }\nPush: ${detail.pushEnabled ? 'enabled' : 'disabled'}`
+    );
+    return;
+  }
+
+  if (action === 'history') {
+    const result = await api.adminUserHistory(user.id, { limit: 20, offset: 0 });
+    const lines = (result.data || [])
+      .slice(0, 20)
+      .map((item) => `${fmtTime(item.createdAt)} | ${item.actionType} | ${item.summary}`)
+      .join('\n');
+    window.alert(`Recent actions for ${user.email}\n\n${lines || 'No actions found.'}`);
+    return;
+  }
+
+  if (action === 'edit') {
+    const nextName = window.prompt('Full name', user.fullName || '');
+    if (nextName === null) return;
+    const nextPhone = window.prompt('Phone number (10-15 digits)', user.phoneNumber || '');
+    if (nextPhone === null) return;
+    const nextRole = (window.prompt('Role: student, seller, delivery, admin', user.role || 'student') || '').trim().toLowerCase();
+    if (!nextRole) return;
+    if (!['student', 'seller', 'delivery', 'admin'].includes(nextRole)) {
+      setText('adminUsersStatus', 'Invalid role.');
+      return;
+    }
+    const nextEmail = window.prompt('Email', user.email || '');
+    if (nextEmail === null) return;
+    await api.adminUpdateUser(user.id, {
+      fullName: nextName.trim(),
+      phoneNumber: nextPhone.trim(),
+      role: nextRole,
+      email: nextEmail.trim()
+    });
+    await refreshUsersData();
+    await refreshAdminData().catch(() => null);
+    setText('adminUsersStatus', `User #${user.id} updated.`);
+    return;
+  }
+
+  if (action === 'resetPassword') {
+    const newPassword = window.prompt(`Enter new password for ${user.email} (min 8 chars)`, '');
+    if (!newPassword) return;
+    await api.adminResetUserPassword({
+      email: user.email,
+      newPassword
+    });
+    setText('adminUsersStatus', `Password reset for ${user.email}.`);
+    return;
+  }
+
+  if (action === 'delete') {
+    if (!window.confirm(`Delete user "${user.email}"? This action is permanent.`)) return;
+    await api.adminDeleteUser(user.id);
+    await refreshUsersData();
+    await refreshAdminData().catch(() => null);
+    setText('adminUsersStatus', `User ${user.email} deleted.`);
+  }
 }
 
 async function handleCrudAction(kind, action, id) {
@@ -552,28 +696,42 @@ async function checkAdminSession() {
     el('adminMainPanel')?.classList.toggle('hidden', !isAdmin);
     el('adminBannerPanel')?.classList.toggle('hidden', !isAdmin);
     el('adminSupportPanel')?.classList.toggle('hidden', !isAdmin);
+    el('adminProfilePanel')?.classList.toggle('hidden', !isAdmin);
     syncAdminTabs();
     if (!me.authenticated) {
+      crudState.adminUser = null;
       setText('adminLoginStatus', 'Login with an admin account to open this panel.');
       setText('adminStatus', 'Admin login required.');
       return;
     }
     if (!isAdmin) {
+      crudState.adminUser = null;
       const role = me.user?.role || 'unknown';
       setText('adminLoginStatus', `Logged in as ${role}. Admin role is required.`);
       setText('adminStatus', 'Current account is not an admin account.');
       return;
     }
+    crudState.adminUser = me.user;
+    renderAdminProfile();
     setText('adminLoginStatus', `Admin session active: ${me.user?.email || ''}`);
     if (isAdmin) {
-      await Promise.all([refreshAdminData(), refreshCrudData(), refreshBannerData(), refreshFeedbackData()]);
+      await Promise.all([
+        refreshAdminData(),
+        refreshCrudData(),
+        refreshBannerData(),
+        refreshFeedbackData(),
+        refreshUsersData(),
+        refreshDeliveryRateData()
+      ]);
     }
   } catch (error) {
+    crudState.adminUser = null;
     syncAdminHeader(false, false);
     el('adminLoginPanel')?.classList.remove('hidden');
     el('adminMainPanel')?.classList.add('hidden');
     el('adminBannerPanel')?.classList.add('hidden');
     el('adminSupportPanel')?.classList.add('hidden');
+    el('adminProfilePanel')?.classList.add('hidden');
     syncAdminTabs();
     setText('adminLoginStatus', error.message || 'Unable to validate admin session.');
     setText('adminStatus', 'Unable to load admin panel.');
@@ -622,17 +780,138 @@ el('adminSupportRefreshBtn')?.addEventListener('click', () => {
   refreshFeedbackData().catch(() => null);
 });
 
+el('adminUsersRefreshBtn')?.addEventListener('click', () => {
+  refreshUsersData().catch(() => null);
+});
+
+el('adminUsersSearchBtn')?.addEventListener('click', () => {
+  refreshUsersData().catch(() => null);
+});
+
+el('adminUsersSearchInput')?.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  refreshUsersData().catch(() => null);
+});
+
+el('adminCreateUserForm')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  setText('adminUsersStatus', 'Creating user...');
+  try {
+    await api.adminCreateUser({
+      fullName: form.fullName.value.trim(),
+      email: form.email.value.trim(),
+      phoneNumber: form.phoneNumber.value.trim(),
+      password: form.password.value,
+      role: form.role.value
+    });
+    form.reset();
+    setText('adminUsersStatus', 'User created.');
+    await refreshUsersData();
+    await refreshAdminData();
+  } catch (error) {
+    setText('adminUsersStatus', error.message || 'Unable to create user');
+  }
+});
+
+el('adminDeliveryRateForm')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const input = el('adminDeliveryRateInput');
+  const amount = Number(input?.value || 0);
+  if (!Number.isFinite(amount) || amount < 0) {
+    setText('adminDeliveryRateStatus', 'Enter a valid amount.');
+    return;
+  }
+  setText('adminDeliveryRateStatus', 'Saving delivery rate...');
+  try {
+    await api.adminSetDeliveryRate(amount);
+    await refreshDeliveryRateData();
+    setText('adminDeliveryRateStatus', 'Delivery rate updated.');
+  } catch (error) {
+    setText('adminDeliveryRateStatus', error.message || 'Unable to save delivery rate');
+  }
+});
+
+el('adminProfileForm')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  setText('adminProfileStatus', 'Saving profile...');
+  try {
+    const payload = await api.updateProfile({
+      fullName: form.fullName.value.trim(),
+      phoneNumber: form.phoneNumber.value.trim()
+    });
+    crudState.adminUser = payload.user || crudState.adminUser;
+    renderAdminProfile();
+    setText('adminProfileStatus', 'Profile updated.');
+  } catch (error) {
+    setText('adminProfileStatus', error.message || 'Unable to update profile');
+  }
+});
+
+el('adminPasswordForm')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  setText('adminPasswordStatus', 'Changing admin password...');
+  try {
+    const payload = await api.adminChangePassword({
+      currentPassword: form.currentPassword.value,
+      newPassword: form.newPassword.value
+    });
+    form.reset();
+    setText(
+      'adminPasswordStatus',
+      payload?.reauthRequired ? 'Password changed. Please login again.' : 'Password changed.'
+    );
+    if (payload?.reauthRequired) {
+      window.location.reload();
+    }
+  } catch (error) {
+    setText('adminPasswordStatus', error.message || 'Unable to change admin password');
+  }
+});
+
+el('adminUserResetForm')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  setText('adminUserResetStatus', 'Resetting user password...');
+  try {
+    await api.adminResetUserPassword({
+      email: form.email.value.trim(),
+      newPassword: form.newPassword.value
+    });
+    form.reset();
+    setText('adminUserResetStatus', 'User password reset done.');
+  } catch (error) {
+    setText('adminUserResetStatus', error.message || 'Unable to reset user password');
+  }
+});
+
 el('adminMainPanel')?.addEventListener('click', async (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
-  const button = target.closest('.admin-crud-action-btn');
-  if (!button) return;
+  const crudButton = target.closest('.admin-crud-action-btn');
+  const userButton = target.closest('.admin-user-action-btn');
+  if (!crudButton && !userButton) return;
   try {
-    setText('adminCrudStatus', 'Applying action...');
-    await handleCrudAction(button.dataset.kind, button.dataset.action, button.dataset.id);
-    setText('adminCrudStatus', 'Action completed.');
+    if (crudButton) {
+      setText('adminCrudStatus', 'Applying action...');
+      await handleCrudAction(crudButton.dataset.kind, crudButton.dataset.action, crudButton.dataset.id);
+      setText('adminCrudStatus', 'Action completed.');
+      return;
+    }
+    if (userButton) {
+      setText('adminUsersStatus', 'Applying user action...');
+      await handleAdminUserAction(userButton.dataset.action, userButton.dataset.id);
+      return;
+    }
   } catch (error) {
-    setText('adminCrudStatus', error.message || 'CRUD action failed');
+    if (crudButton) {
+      setText('adminCrudStatus', error.message || 'CRUD action failed');
+    } else {
+      setText('adminUsersStatus', error.message || 'User action failed');
+    }
   }
 });
 
@@ -692,7 +971,14 @@ el('adminLogoutBtn')?.addEventListener('click', async () => {
 
 setInterval(() => {
   if (!el('adminMainPanel')?.classList.contains('hidden')) {
-    Promise.all([refreshAdminData(), refreshCrudData(), refreshBannerData(), refreshFeedbackData()]).catch(() => null);
+    Promise.all([
+      refreshAdminData(),
+      refreshCrudData(),
+      refreshBannerData(),
+      refreshFeedbackData(),
+      refreshUsersData(),
+      refreshDeliveryRateData()
+    ]).catch(() => null);
   }
 }, 20000);
 
