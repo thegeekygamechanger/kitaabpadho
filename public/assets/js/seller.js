@@ -2,7 +2,7 @@ import { api } from './api.js';
 import { initFeedback } from './feedback.js';
 import { initFormEnhancements } from './forms.js';
 import { playNotificationSound, unlockNotificationSound } from './sound.js';
-import { escapeHtml, formatInr } from './ui.js';
+import { escapeHtml, formatInr, hideModal, showModal } from './ui.js';
 
 function el(id) {
   return document.getElementById(id);
@@ -33,6 +33,7 @@ let currentSellerOrders = [];
 let locationOptions = [];
 let stream = null;
 let feedback = null;
+let activeOrderModalId = null;
 const PORTAL_KEY = 'kp_active_portal';
 const PORTAL_NAME = 'seller';
 const TAB_SECTION_IDS = [
@@ -314,6 +315,55 @@ function renderSellerOrders(items) {
       </article>`;
     })
     .join('');
+}
+
+function openSellerOrderModal(orderId) {
+  const item = currentSellerOrders.find((row) => Number(row.id) === Number(orderId));
+  if (!item) return;
+  activeOrderModalId = Number(item.id);
+  const nextStatuses = nextSellerStatuses(item.status).filter((status) => SELLER_STATUS_OPTIONS.includes(status));
+  const node = el('sellerOrderModalContent');
+  if (!node) return;
+  node.innerHTML = `
+    <article class="listing-detail">
+      <div class="listing-detail-info" style="grid-column:1/-1">
+        <h3>Order #${escapeHtml(String(item.id || ''))}</h3>
+        <div class="card-meta">
+          <span class="pill type-buy">${escapeHtml(item.actionKind || 'buy')}</span>
+          <span class="pill type-rent">${escapeHtml(prettyOrderStatus(item.status || 'received'))}</span>
+          <span class="muted">${escapeHtml(item.paymentMode || 'cod')} (${escapeHtml(item.paymentState || 'cod_due')})</span>
+        </div>
+        ${renderOrderStatusRail(item.status)}
+        <p class="muted">Item: ${escapeHtml(item.listingTitle || `Listing #${item.listingId || '-'}`)}</p>
+        <p class="muted">Buyer: ${escapeHtml(item.buyerName || item.buyerEmail || '-')}</p>
+        <p class="muted">Quantity: ${escapeHtml(String(item.quantity || 1))}</p>
+        <p class="muted">Items: ${formatInr(item.totalPrice)} | Delivery: ${formatInr(item.deliveryCharge)} | Total: ${formatInr(item.payableTotal)}</p>
+        <p class="muted">Next action: ${
+          nextStatuses.length
+            ? escapeHtml(nextStatuses.map((status) => prettyOrderStatus(status)).join(' / '))
+            : 'No seller action pending. Delivery partner will continue.'
+        }</p>
+        <div class="drawer-actions">
+          ${nextStatuses
+            .map(
+              (status) =>
+                `<button class="kb-btn kb-btn-primary seller-order-modal-status-btn" data-id="${item.id}" data-status="${status}" type="button">${escapeHtml(
+                  prettyOrderStatus(status)
+                )}</button>`
+            )
+            .join('')}
+          <button class="kb-btn kb-btn-dark seller-order-modal-close-btn" type="button">Close</button>
+          <button class="kb-btn kb-btn-ghost seller-order-modal-refresh-btn" data-id="${item.id}" type="button">Refresh</button>
+        </div>
+      </div>
+    </article>
+  `;
+  showModal('sellerOrderModal');
+}
+
+function closeSellerOrderModal() {
+  activeOrderModalId = null;
+  hideModal('sellerOrderModal');
 }
 
 function renderSellerProfile() {
@@ -806,13 +856,7 @@ el('sellerOrdersList')?.addEventListener('click', async (event) => {
 
   const viewBtn = target.closest('.seller-order-view-btn');
   if (viewBtn) {
-    const item = currentSellerOrders.find((row) => Number(row.id) === Number(viewBtn.dataset.id));
-    if (!item) return;
-    window.alert(
-      `Order #${item.id}\nItem: ${item.listingTitle}\nBuyer: ${item.buyerName || item.buyerEmail}\nStatus: ${prettyOrderStatus(
-        item.status
-      )}\nPayment: ${item.paymentMode} (${item.paymentState})\nTotal: ${formatInr(item.payableTotal)}`
-    );
+    openSellerOrderModal(viewBtn.dataset.id);
     return;
   }
 
@@ -827,6 +871,50 @@ el('sellerOrdersList')?.addEventListener('click', async (event) => {
     setText('sellerOrdersStatus', `Order #${orderId} updated to ${prettyOrderStatus(status)}.`);
     window.dispatchEvent(new CustomEvent('kp:orders:refresh'));
     await refreshSellerOrders();
+  } catch (error) {
+    setText('sellerOrdersStatus', error.message || 'Unable to update order status');
+  }
+});
+
+el('closeSellerOrderModalBtn')?.addEventListener('click', () => {
+  closeSellerOrderModal();
+});
+
+el('sellerOrderModal')?.addEventListener('click', (event) => {
+  if (event.target === el('sellerOrderModal')) closeSellerOrderModal();
+});
+
+el('sellerOrderModalContent')?.addEventListener('click', async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+
+  if (target.closest('.seller-order-modal-close-btn')) {
+    closeSellerOrderModal();
+    return;
+  }
+
+  const refreshBtn = target.closest('.seller-order-modal-refresh-btn');
+  if (refreshBtn) {
+    const id = Number(refreshBtn.dataset.id || activeOrderModalId || 0);
+    if (!id) return;
+    await refreshSellerOrders().catch(() => null);
+    openSellerOrderModal(id);
+    return;
+  }
+
+  const statusBtn = target.closest('.seller-order-modal-status-btn');
+  if (!statusBtn) return;
+  const orderId = Number(statusBtn.dataset.id || 0);
+  const status = String(statusBtn.dataset.status || '').trim();
+  if (!orderId || !status) return;
+
+  try {
+    setText('sellerOrdersStatus', `Updating order #${orderId}...`);
+    await api.updateOrderStatus(orderId, status);
+    setText('sellerOrdersStatus', `Order #${orderId} updated to ${prettyOrderStatus(status)}.`);
+    window.dispatchEvent(new CustomEvent('kp:orders:refresh'));
+    await refreshSellerOrders();
+    openSellerOrderModal(orderId);
   } catch (error) {
     setText('sellerOrdersStatus', error.message || 'Unable to update order status');
   }
