@@ -7,7 +7,6 @@ const path = require('path');
 const multer = require('multer');
 const webpush = require('web-push');
 const QRCode = require('qrcode');
-const Razorpay = require('razorpay');
 const config = require('./config');
 const { query } = require('./db');
 const { runDbBootstrap } = require('./bootstrap');
@@ -50,12 +49,11 @@ const {
   pushSubscribeSchema,
   deliveryJobsQuerySchema,
   deliveryJobStatusSchema,
-  razorpayOrderSchema,
-  paymentModes,
   orderStatuses,
   marketplaceOrderCreateSchema,
   marketplaceOrdersQuerySchema,
   marketplaceOrderStatusSchema,
+  marketplaceOrderNoteSchema,
   feedbackCreateSchema,
   feedbackListQuerySchema,
   bannerQuerySchema,
@@ -289,13 +287,6 @@ function createApp(deps = {}) {
   const askAiFn = deps.askAiFn || askPadhAI;
   const reverseGeocodeFetch = deps.fetchImpl || fetch;
   const r2EnabledFlag = typeof deps.r2Enabled === 'boolean' ? deps.r2Enabled : r2Enabled;
-  const razorpayClient =
-    appConfig.payments?.razorpayKeyId && appConfig.payments?.razorpayKeySecret
-      ? new Razorpay({
-          key_id: appConfig.payments.razorpayKeyId,
-          key_secret: appConfig.payments.razorpayKeySecret
-        })
-      : null;
 
   if (appConfig.push?.vapidPublicKey && appConfig.push?.vapidPrivateKey) {
     webpush.setVapidDetails(appConfig.push.subject, appConfig.push.vapidPublicKey, appConfig.push.vapidPrivateKey);
@@ -307,8 +298,6 @@ function createApp(deps = {}) {
   const clearCookieOptions = { ...cookieOptions };
   delete clearCookieOptions.maxAge;
   const sseClients = new Set();
-  const onlinePaymentModes = new Set(['upi', 'card', 'razorpay']);
-  const validPaymentModes = new Set(paymentModes);
   const validOrderStatuses = new Set(orderStatuses);
   app.set('trust proxy', 1);
 
@@ -1432,6 +1421,7 @@ function createApp(deps = {}) {
         description: body.description.trim(),
         city: body.city.trim(),
         deliveryRatePer10Km,
+        paymentModes: ['cod'],
         areaCode: baseAreaCode,
         serviceableAreaCodes,
         serviceableCities,
@@ -1576,7 +1566,7 @@ function createApp(deps = {}) {
         sellerType: body.sellerType,
         deliveryMode: body.deliveryMode,
         deliveryRatePer10Km: nextDeliveryRatePer10Km,
-        paymentModes: body.paymentModes,
+        paymentModes: ['cod'],
         price: Number(body.price),
         city: sanitizeText(body.city, 100),
         areaCode: normalizedAreaCode,
@@ -1777,15 +1767,7 @@ function createApp(deps = {}) {
         return res.status(400).json({ error: 'You cannot place order on your own listing' });
       }
 
-      const listingPaymentModes = Array.isArray(listing.paymentModes)
-        ? listing.paymentModes.filter((mode) => validPaymentModes.has(mode))
-        : [];
-      if (!listingPaymentModes.length) listingPaymentModes.push('cod');
-
-      const selectedPaymentMode = body.paymentMode || (listingPaymentModes.includes('cod') ? 'cod' : listingPaymentModes[0]);
-      if (!listingPaymentModes.includes(selectedPaymentMode)) {
-        return res.status(400).json({ error: `Payment mode ${selectedPaymentMode} is not available for this listing` });
-      }
+      const selectedPaymentMode = 'cod';
 
       const actionKind = listing.listingType === 'rent' ? 'rent' : 'buy';
       if (body.action && body.action !== actionKind) {
@@ -1805,7 +1787,7 @@ function createApp(deps = {}) {
       const deliveryRatePer10Km = asMoney(listing.deliveryRatePer10Km, 20);
       const deliveryCharge = computeDeliveryCharge({ distanceKm, ratePer10Km: deliveryRatePer10Km });
       const payableTotal = asMoney(totalPrice + deliveryCharge, 0);
-      const paymentState = selectedPaymentMode === 'cod' ? 'cod_due' : 'pending';
+      const paymentState = 'cod_due';
 
       const order = await repository.createMarketplaceOrder({
         listingId: listing.id,
@@ -2070,60 +2052,6 @@ function createApp(deps = {}) {
       return res.json({ ok: true, order: updated });
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
-      return res.status(500).json({ error: error.message });
-    }
-  });
-
-  app.post('/api/orders/:id/payments/razorpay', requireAuth, async (req, res) => {
-    const orderId = parseId(req.params.id);
-    if (!orderId) return res.status(400).json({ error: 'Invalid order id' });
-    try {
-      if (!razorpayClient) {
-        return res.status(500).json({ error: 'Razorpay keys are not configured' });
-      }
-      if (
-        typeof repository.getMarketplaceOrderById !== 'function' ||
-        typeof repository.updateMarketplaceOrderPayment !== 'function'
-      ) {
-        return res.status(500).json({ error: 'Order payment is not available' });
-      }
-      const order = await repository.getMarketplaceOrderById(orderId);
-      if (!order) return res.status(404).json({ error: 'Order not found' });
-      if (Number(order.buyerId) !== Number(req.user.id)) {
-        return res.status(403).json({ error: 'Only buyer can create payment order' });
-      }
-      if (!onlinePaymentModes.has(String(order.paymentMode || '').toLowerCase())) {
-        return res.status(400).json({ error: 'Online payment is not enabled for this order' });
-      }
-
-      const paymentOrder = await razorpayClient.orders.create({
-        amount: Math.round(Number(order.payableTotal || 0) * 100),
-        currency: appConfig.payments.currency || 'INR',
-        receipt: `order-${order.id}-${Date.now()}`
-      });
-      const updated = await repository.updateMarketplaceOrderPayment({
-        orderId: order.id,
-        paymentState: 'pending',
-        paymentGateway: 'razorpay',
-        paymentGatewayOrderId: paymentOrder.id || ''
-      });
-
-      await logProjectAction(req, {
-        actionType: 'order.payment_create',
-        entityType: 'marketplace_order',
-        entityId: order.id,
-        summary: 'Razorpay payment order created',
-        details: { payableTotal: Number(order.payableTotal || 0), gatewayOrderId: paymentOrder.id || '' }
-      });
-
-      publishRealtimeEvent('orders.updated', { type: 'order_payment_created', orderId: order.id }, order.buyerId);
-      return res.json({
-        ok: true,
-        keyId: appConfig.payments.razorpayKeyId,
-        paymentOrder,
-        order: updated || order
-      });
-    } catch (error) {
       return res.status(500).json({ error: error.message });
     }
   });
@@ -2622,37 +2550,6 @@ function createApp(deps = {}) {
 
       return res.json({ ok: true, job });
     } catch (error) {
-      return res.status(500).json({ error: error.message });
-    }
-  });
-
-  app.post('/api/payments/razorpay/order', requireAuth, async (req, res) => {
-    try {
-      const body = razorpayOrderSchema.parse(req.body);
-      if (!razorpayClient) {
-        return res.status(500).json({ error: 'Razorpay keys are not configured' });
-      }
-      const order = await razorpayClient.orders.create({
-        amount: Math.round(Number(body.amount) * 100),
-        currency: appConfig.payments.currency || 'INR',
-        receipt: body.receipt || `kp-${Date.now()}`
-      });
-
-      await logProjectAction(req, {
-        actionType: 'payment.razorpay_order_create',
-        entityType: 'payment_order',
-        entityId: null,
-        summary: 'Razorpay order created',
-        details: { amount: body.amount, receipt: body.receipt || '' }
-      });
-
-      return res.json({
-        ok: true,
-        order,
-        keyId: appConfig.payments.razorpayKeyId
-      });
-    } catch (error) {
-      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
       return res.status(500).json({ error: error.message });
     }
   });

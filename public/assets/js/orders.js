@@ -2,7 +2,6 @@ import { api } from './api.js';
 import { el, escapeHtml, formatInr, renderEmpty } from './ui.js';
 
 const STATUS_FLOW = ['received', 'packing', 'shipping', 'out_for_delivery', 'delivered'];
-const ONLINE_MODES = new Set(['upi', 'card', 'razorpay']);
 
 function prettyStatus(status) {
   return String(status || '').replaceAll('_', ' ');
@@ -49,9 +48,6 @@ export function initOrders({ state, openAuthModal }) {
       list.innerHTML = currentOrders
         .map((item) => {
           const payable = Number(item.payableTotal || item.totalPrice || 0);
-          const canPayOnline =
-            ONLINE_MODES.has(String(item.paymentMode || '').toLowerCase()) &&
-            String(item.paymentState || '').toLowerCase() !== 'paid';
           return `<article class="card">
             <div class="card-media">${
               item.listingImageUrl ? `<img src="${escapeHtml(item.listingImageUrl)}" alt="${escapeHtml(item.listingTitle || 'Order item')}" />` : '<strong>No Image</strong>'
@@ -68,11 +64,6 @@ export function initOrders({ state, openAuthModal }) {
               <p class="muted">Items: ${formatInr(item.totalPrice)} | Delivery: ${formatInr(item.deliveryCharge)} | Total: ${formatInr(payable)}</p>
               ${orderStatusRail(item.status)}
               <div class="card-actions">
-                ${
-                  canPayOnline
-                    ? `<button class="kb-btn kb-btn-primary order-pay-btn" data-id="${item.id}" type="button">Pay Online (Final Step)</button>`
-                    : ''
-                }
                 <button class="kb-btn kb-btn-dark order-view-btn" data-id="${item.id}" type="button">View</button>
               </div>
             </div>
@@ -118,22 +109,6 @@ export function initOrders({ state, openAuthModal }) {
   list?.addEventListener('click', async (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
-
-    const payBtn = target.closest('.order-pay-btn');
-    if (payBtn) {
-      if (!state.user?.id) {
-        openAuthModal?.('Please login to continue payment.');
-        return;
-      }
-      try {
-        const payload = await api.createOrderRazorpayPayment(payBtn.dataset.id);
-        window.alert(`Razorpay payment order ready: ${payload.paymentOrder?.id || 'N/A'}`);
-        await refresh();
-      } catch (error) {
-        window.alert(error.message || 'Unable to start online payment');
-      }
-      return;
-    }
 
     const viewBtn = target.closest('.order-view-btn');
     if (!viewBtn) return;

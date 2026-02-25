@@ -35,10 +35,5 @@ module.exports = {
       process.env.VAPID_PRIVATE_KEY ||
       'INPlk2uJtJM9fozQ7fth7LXkDUdvmJDwMlU4l26iTU8',
     subject: process.env.VAPID_SUBJECT || 'mailto:admin@kitaabpadho.in'
-  },
-  payments: {
-    razorpayKeyId: process.env.RAZORPAY_KEY_ID || '',
-    razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || '',
-    currency: process.env.RAZORPAY_CURRENCY || 'INR'
   }
 };

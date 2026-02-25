@@ -837,6 +837,8 @@ function createRepository(queryFn) {
           l.delivery_rate_per_10km AS "deliveryRatePer10Km",
           l.payment_modes AS "paymentModes",
           l.price,
+          l.total_items AS "totalItems",
+          l.remaining_items AS "remainingItems",
           l.city,
           l.area_code AS "areaCode",
           l.serviceable_area_codes AS "serviceableAreaCodes",
@@ -952,6 +954,8 @@ function createRepository(queryFn) {
       deliveryRatePer10Km = 20,
       paymentModes = ['cod'],
       price,
+      totalItems = 1,
+      remainingItems = 1,
       city,
       areaCode,
       serviceableAreaCodes = [],
@@ -963,8 +967,8 @@ function createRepository(queryFn) {
     }) {
       const result = await run(
         `INSERT INTO listings
-          (title, description, category, listing_type, seller_type, delivery_mode, delivery_rate_per_10km, payment_modes, price, city, area_code, serviceable_area_codes, serviceable_cities, publish_india, latitude, longitude, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+          (title, description, category, listing_type, seller_type, delivery_mode, delivery_rate_per_10km, payment_modes, price, total_items, remaining_items, city, area_code, serviceable_area_codes, serviceable_cities, publish_india, latitude, longitude, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
          RETURNING
           id,
           title,
@@ -976,6 +980,8 @@ function createRepository(queryFn) {
           delivery_rate_per_10km AS "deliveryRatePer10Km",
           payment_modes AS "paymentModes",
           price,
+          total_items AS "totalItems",
+          remaining_items AS "remainingItems",
           city,
           area_code AS "areaCode",
           serviceable_area_codes AS "serviceableAreaCodes",
@@ -995,6 +1001,8 @@ function createRepository(queryFn) {
           deliveryRatePer10Km,
           paymentModes,
           price,
+          totalItems,
+          remainingItems,
           city,
           areaCode,
           serviceableAreaCodes,
@@ -1021,6 +1029,8 @@ function createRepository(queryFn) {
       deliveryRatePer10Km = 20,
       paymentModes = ['cod'],
       price,
+      totalItems = 1,
+      remainingItems = 1,
       city,
       areaCode,
       serviceableAreaCodes = [],
@@ -1041,13 +1051,15 @@ function createRepository(queryFn) {
           delivery_rate_per_10km = $10,
           payment_modes = $11,
           price = $12,
-          city = $13,
-          area_code = $14,
-          serviceable_area_codes = $15,
-          serviceable_cities = $16,
-          publish_india = $17,
-          latitude = $18,
-          longitude = $19
+          total_items = $13,
+          remaining_items = $14,
+          city = $15,
+          area_code = $16,
+          serviceable_area_codes = $17,
+          serviceable_cities = $18,
+          publish_india = $19,
+          latitude = $20,
+          longitude = $21
          WHERE id = $1
            AND ($2::boolean OR created_by = $3)
          RETURNING
@@ -1061,6 +1073,8 @@ function createRepository(queryFn) {
           delivery_rate_per_10km AS "deliveryRatePer10Km",
           payment_modes AS "paymentModes",
           price,
+          total_items AS "totalItems",
+          remaining_items AS "remainingItems",
           city,
           area_code AS "areaCode",
           serviceable_area_codes AS "serviceableAreaCodes",
@@ -1083,6 +1097,8 @@ function createRepository(queryFn) {
           deliveryRatePer10Km,
           paymentModes,
           price,
+          totalItems,
+          remainingItems,
           city,
           areaCode,
           serviceableAreaCodes,
@@ -1143,6 +1159,8 @@ function createRepository(queryFn) {
           l.delivery_rate_per_10km AS "deliveryRatePer10Km",
           l.payment_modes AS "paymentModes",
           l.price,
+          l.total_items AS "totalItems",
+          l.remaining_items AS "remainingItems",
           l.city,
           l.area_code AS "areaCode",
           l.serviceable_area_codes AS "serviceableAreaCodes",
@@ -2155,9 +2173,18 @@ function createRepository(queryFn) {
       notes = ''
     }) {
       const inserted = await run(
-        `INSERT INTO marketplace_orders
+        `WITH reserved AS (
+           UPDATE listings
+           SET remaining_items = remaining_items - $5
+           WHERE id = $1
+             AND remaining_items >= $5
+           RETURNING id
+         )
+         INSERT INTO marketplace_orders
           (listing_id, buyer_id, seller_id, action_kind, quantity, unit_price, total_price, distance_km, delivery_rate_per_10km, delivery_charge, payable_total, payment_mode, payment_state, status, delivery_mode, paycheck_amount, buyer_city, buyer_area_code, notes, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,NOW())
+         SELECT
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,NOW()
+         FROM reserved
          RETURNING id`,
         [
           listingId,

@@ -1,8 +1,6 @@
 import { api } from './api.js';
 import { el, escapeHtml, formatInr, hideModal, renderEmpty, showModal } from './ui.js';
 
-const ONLINE_PAYMENT_MODES = new Set(['upi', 'card', 'razorpay']);
-
 function mediaPreview(media = []) {
   const first = media[0];
   if (!first) return '<div class="card-media"><strong>No Media</strong></div>';
@@ -53,29 +51,16 @@ function haversineDistanceKm(fromLat, fromLon, toLat, toLon) {
 }
 
 function normalizePaymentModes(rawModes) {
-  const normalized = [];
-  for (const item of Array.isArray(rawModes) ? rawModes : []) {
-    const mode = String(item || '').trim().toLowerCase();
-    if (!mode) continue;
-    if (!['cod', 'upi', 'card', 'razorpay'].includes(mode)) continue;
-    if (normalized.includes(mode)) continue;
-    normalized.push(mode);
-  }
-  if (!normalized.length) normalized.push('cod');
-  return normalized;
+  return ['cod'];
 }
 
 function paymentModeLabel(mode) {
   if (mode === 'cod') return 'Cash on Delivery';
-  return 'Online Payment (UPI / Card)';
+  return 'Cash on Delivery';
 }
 
 function prettyPaymentModes(modes) {
   if (!Array.isArray(modes) || !modes.length) return 'cash on delivery';
-  const hasCod = modes.includes('cod');
-  const hasOnline = modes.some((mode) => ONLINE_PAYMENT_MODES.has(mode));
-  if (hasCod && hasOnline) return 'cash on delivery, online payment';
-  if (hasOnline) return 'online payment';
   return 'cash on delivery';
 }
 
@@ -245,7 +230,6 @@ export function initMarketplace({ state, openAuthModal }) {
     }
 
     const checkout = calculateCheckoutTotals(listing);
-    const isOnlineSelected = ONLINE_PAYMENT_MODES.has(checkoutPaymentMode);
     const checkoutOrderStatus = checkoutOrder
       ? `Order #${checkoutOrder.id} created. Current status: ${String(checkoutOrder.status || 'received').replaceAll('_', ' ')}.`
       : '';
@@ -318,11 +302,6 @@ export function initMarketplace({ state, openAuthModal }) {
             ${checkoutOrder ? statusRail(checkoutOrder.status) : ''}
             <div class="drawer-actions">
               <button class="kb-btn kb-btn-primary place-order-btn" data-id="${listing.id}" type="button">${actionLabel}</button>
-              ${
-                checkoutOrder && isOnlineSelected
-                  ? `<button class="kb-btn kb-btn-dark pay-online-final-btn" data-order-id="${checkoutOrder.id}" type="button">Pay Online (Final Step)</button>`
-                  : ''
-              }
               ${
                 canManage
                   ? `<button class="kb-btn kb-btn-dark edit-listing-btn" data-id="${listing.id}" type="button">Edit</button>
@@ -463,12 +442,10 @@ export function initMarketplace({ state, openAuthModal }) {
     return false;
   }
 
-  function showOrderSuccessModal({ order, listing, onlineSelected }) {
+  function showOrderSuccessModal({ order, listing }) {
     if (!orderSuccessContent || !order) return;
     const actionLabel = String(order.actionKind || listing?.listingType || 'buy').toUpperCase();
-    const onlineMessage = onlineSelected
-      ? 'Online payment selected. Complete payment in Orders tab at final step.'
-      : 'Cash on Delivery selected. Seller received your order request.';
+    const paymentMessage = 'Cash on Delivery selected. Seller received your order request.';
     orderSuccessContent.innerHTML = `
       <div class="order-success-head">
         <p class="order-success-kicker">Order Sent Successfully</p>
@@ -480,7 +457,7 @@ export function initMarketplace({ state, openAuthModal }) {
         <span>Total: ${formatInr(order.payableTotal || order.totalPrice || 0)}</span>
         <span>Status: ${escapeHtml(String(order.status || 'received').replaceAll('_', ' '))}</span>
       </div>
-      <p class="muted">${escapeHtml(onlineMessage)}</p>
+      <p class="muted">${escapeHtml(paymentMessage)}</p>
       <div class="drawer-actions">
         <button class="kb-btn kb-btn-primary order-success-view-orders-btn" type="button">View Orders</button>
         <button class="kb-btn kb-btn-ghost order-success-continue-btn" type="button">Continue Browsing</button>
@@ -553,13 +530,12 @@ export function initMarketplace({ state, openAuthModal }) {
       try {
         const result = await api.createMarketplaceOrder(payload);
         checkoutOrder = result.order || null;
-        const onlineSelected = ONLINE_PAYMENT_MODES.has(checkoutPaymentMode);
         checkoutStatus = checkoutOrder
           ? `Order #${checkoutOrder.id} placed successfully.`
           : 'Order placed successfully.';
         window.dispatchEvent(new CustomEvent('kp:orders:refresh'));
         if (checkoutOrder) {
-          showOrderSuccessModal({ order: checkoutOrder, listing: currentListing, onlineSelected });
+          showOrderSuccessModal({ order: checkoutOrder, listing: currentListing });
         }
         renderListingDetail();
       } catch (error) {
@@ -570,25 +546,6 @@ export function initMarketplace({ state, openAuthModal }) {
         checkoutStatus = error.message || 'Unable to place order';
         renderListingDetail();
       }
-      return;
-    }
-
-    const payOnlineBtn = target.closest('.pay-online-final-btn');
-    if (payOnlineBtn) {
-      const orderId = Number(payOnlineBtn.dataset.orderId || 0);
-      if (!orderId) return;
-      checkoutStatus = 'Creating Razorpay payment order...';
-      renderListingDetail();
-      try {
-        const result = await api.createOrderRazorpayPayment(orderId);
-        checkoutOrder = result.order || checkoutOrder;
-        checkoutStatus = `Razorpay payment order ready: ${result.paymentOrder?.id || 'N/A'}`;
-        window.alert(`Razorpay order created: ${result.paymentOrder?.id || 'N/A'}`);
-        window.dispatchEvent(new CustomEvent('kp:orders:refresh'));
-      } catch (error) {
-        checkoutStatus = error.message || 'Unable to start online payment';
-      }
-      renderListingDetail();
       return;
     }
 
@@ -619,10 +576,7 @@ export function initMarketplace({ state, openAuthModal }) {
           sellerType: currentListing.sellerType || 'student',
           deliveryMode: currentListing.deliveryMode || 'peer_to_peer',
           deliveryRatePer10Km: Number(currentListing.deliveryRatePer10Km || 20),
-          paymentModes:
-            Array.isArray(currentListing.paymentModes) && currentListing.paymentModes.length
-              ? currentListing.paymentModes
-              : ['cod'],
+          paymentModes: ['cod'],
           price: nextPrice,
           city: nextCity.trim() || currentListing.city || 'Unknown',
           areaCode: currentListing.areaCode || 'unknown',

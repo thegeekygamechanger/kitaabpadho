@@ -613,7 +613,6 @@ el('sellerListingForm')?.addEventListener('submit', async (event) => {
     return;
   }
   const form = event.currentTarget;
-  const paymentModes = Array.from(form.querySelectorAll('input[name="paymentModes"]:checked')).map((node) => node.value);
   const serviceableAreaCodes = Array.from(form.querySelectorAll('input[name="serviceableAreaCodes"]:checked')).map(
     (node) => node.value
   );
@@ -630,7 +629,7 @@ el('sellerListingForm')?.addEventListener('submit', async (event) => {
       deliveryRatePer10Km: form.deliveryRatePer10Km?.value
         ? Number(form.deliveryRatePer10Km.value)
         : undefined,
-      paymentModes: paymentModes.length ? paymentModes : ['cod'],
+      paymentModes: ['cod'],
       price: Number(form.price.value || 0),
       city: form.city.value.trim(),
       areaCode: slugifyAreaCode(form.areaCode.value || form.city.value || 'unknown'),
@@ -892,7 +891,7 @@ el('sellerListings')?.addEventListener('click', async (event) => {
         sellerType: item.sellerType || 'student',
         deliveryMode: item.deliveryMode || 'peer_to_peer',
         deliveryRatePer10Km,
-        paymentModes: Array.isArray(item.paymentModes) && item.paymentModes.length ? item.paymentModes : ['cod'],
+        paymentModes: ['cod'],
         price,
         city: city.trim() || item.city || 'Unknown',
         areaCode: slugifyAreaCode(item.areaCode || city || 'unknown'),

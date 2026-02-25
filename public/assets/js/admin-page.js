@@ -549,7 +549,7 @@ async function handleCrudAction(kind, action, id) {
         listingType: item.listingType,
         sellerType: item.sellerType || 'student',
         deliveryMode: item.deliveryMode || 'peer_to_peer',
-        paymentModes: Array.isArray(item.paymentModes) && item.paymentModes.length ? item.paymentModes : ['cod'],
+        paymentModes: ['cod'],
         price: nextPrice,
         city: nextCity.trim() || item.city || 'Unknown',
         areaCode: item.areaCode || 'unknown',
