@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#1f6fe5" />
     <title>📚 Seller Portal | KitaabPadho</title>
     <link rel="icon" type="image/svg+xml" href="/assets/icons/bookish.svg" />
-    <link rel="stylesheet" href="/assets/css/app.css?v=20260225b" />
+    <link rel="stylesheet" href="/assets/css/app.css?v=20260225c" />
   </head>
   <body>
     <header class="kb-header">
@@ -32,11 +32,22 @@
           <h2>Seller Login</h2>
           <p id="sellerAuthBadge" class="muted">Guest</p>
         </div>
-        <form id="sellerLoginForm" class="drawer" style="max-width:460px">
-          <input class="kb-input" name="email" type="email" placeholder="Email" required />
-          <input class="kb-input" name="password" type="password" placeholder="Password" required />
-          <button class="kb-btn kb-btn-primary" type="submit">Login</button>
-        </form>
+        <div class="auth-grid">
+          <form id="sellerLoginForm" class="drawer">
+            <h3>Login</h3>
+            <input class="kb-input" name="email" type="email" placeholder="Email" required />
+            <input class="kb-input" name="password" type="password" placeholder="Password" required />
+            <button class="kb-btn kb-btn-primary" type="submit">Login</button>
+          </form>
+          <form id="sellerSignupForm" class="drawer">
+            <h3>Signup as Seller</h3>
+            <input class="kb-input" name="fullName" placeholder="Full name" required />
+            <input class="kb-input" name="email" type="email" placeholder="Email" required />
+            <input class="kb-input" name="phoneNumber" type="tel" placeholder="Phone number" required />
+            <input class="kb-input" name="password" type="password" placeholder="Password (min 8)" required />
+            <button class="kb-btn kb-btn-dark" type="submit">Create Seller Account</button>
+          </form>
+        </div>
         <p id="sellerAuthStatus" class="muted"></p>
         <p id="sellerPortalHint" class="muted">Login to post and manage your listings.</p>
       </section>
@@ -74,15 +85,34 @@
               <option value="kpi_dedicated">KPI Dedicated</option>
             </select>
             <input name="price" class="kb-input" type="number" min="0" step="0.01" placeholder="Price" required />
-            <input name="city" class="kb-input" placeholder="City" required />
             <select name="areaCode" class="kb-select">
               <option value="other">Other</option>
               <option value="loni_kalbhor">Loni Kalbhor</option>
               <option value="hadapsar">Hadapsar</option>
               <option value="camp">Camp</option>
             </select>
+            <input id="sellerCitySearchInput" name="cityQuery" class="kb-input" placeholder="Search city/locality" />
+            <button id="sellerCitySearchBtn" class="kb-btn kb-btn-ghost" type="button">Search City</button>
+            <select id="sellerCitySelect" name="city" class="kb-select" required>
+              <option value="">Select city</option>
+            </select>
             <input name="latitude" class="kb-input" type="number" step="any" placeholder="Latitude" required />
             <input name="longitude" class="kb-input" type="number" step="any" placeholder="Longitude" required />
+            <button id="sellerDetectGpsBtn" class="kb-btn kb-btn-ghost" type="button">Use GPS</button>
+          </div>
+          <div class="drawer">
+            <h4>Serviceable Areas (up to 250 km)</h4>
+            <div class="serviceable-area-grid">
+              <label><input type="checkbox" name="serviceableAreaCodes" value="loni_kalbhor" /> Loni Kalbhor</label>
+              <label><input type="checkbox" name="serviceableAreaCodes" value="hadapsar" /> Hadapsar</label>
+              <label><input type="checkbox" name="serviceableAreaCodes" value="camp" /> Camp</label>
+              <label><input type="checkbox" name="serviceableAreaCodes" value="other" /> Other</label>
+            </div>
+            <input
+              name="serviceableCities"
+              class="kb-input"
+              placeholder="Nearby serviceable cities (comma separated)"
+            />
           </div>
           <div class="payment-modes">
             <label><input type="checkbox" name="paymentModes" value="cod" checked /> Cash on Delivery</label>
@@ -107,12 +137,31 @@
         </div>
         <div id="sellerListings" class="cards"></div>
       </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Customer Service Query</h2>
+          <button id="sellerSupportRefreshBtn" class="kb-btn kb-btn-ghost" type="button">Refresh</button>
+        </div>
+        <form id="sellerSupportForm" class="drawer">
+          <input class="kb-input" name="senderName" placeholder="Your name" />
+          <input class="kb-input" name="senderEmail" type="email" placeholder="Your email" />
+          <input class="kb-input" name="subject" placeholder="Subject" required />
+          <textarea class="kb-textarea" name="message" placeholder="Your query..." required></textarea>
+          <p class="muted support-user-hint"></p>
+          <div class="drawer-actions">
+            <button class="kb-btn kb-btn-primary" type="submit">Submit Query</button>
+          </div>
+          <p id="sellerSupportStatus" class="muted"></p>
+        </form>
+        <div id="sellerSupportList" class="cards"></div>
+      </section>
     </main>
 
     <footer class="kb-footer">
       <p>Made by UPSC aspirant. Built for learners across India. KitaabPadhoIndia. @2026 copyright</p>
     </footer>
 
-    <script type="module" src="/assets/js/seller.js?v=20260225b"></script>
+    <script type="module" src="/assets/js/seller.js?v=20260225c"></script>
   </body>
 </html>

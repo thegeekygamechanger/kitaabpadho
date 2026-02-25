@@ -268,6 +268,8 @@ async function handleCrudAction(kind, action, id) {
         price: nextPrice,
         city: nextCity.trim() || item.city || 'Unknown',
         areaCode: item.areaCode || 'other',
+        serviceableAreaCodes: Array.isArray(item.serviceableAreaCodes) ? item.serviceableAreaCodes : [],
+        serviceableCities: Array.isArray(item.serviceableCities) ? item.serviceableCities : [],
         latitude: Number(item.latitude),
         longitude: Number(item.longitude)
       });

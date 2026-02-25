@@ -1,4 +1,6 @@
 import { api } from './api.js';
+import { initFeedback } from './feedback.js';
+import { playNotificationSound, unlockNotificationSound } from './sound.js';
 import { escapeHtml, formatInr } from './ui.js';
 
 function el(id) {
@@ -13,6 +15,13 @@ function setText(id, value) {
 let currentUser = null;
 let currentCoords = null;
 let currentJobs = [];
+let stream = null;
+let feedback = null;
+
+function isDeliveryAccount() {
+  if (!currentUser) return false;
+  return currentUser.role === 'delivery' || currentUser.role === 'admin';
+}
 
 function canManageJob(item) {
   if (!currentUser || !item) return false;
@@ -21,6 +30,16 @@ function canManageJob(item) {
     Number(item.createdBy) === Number(currentUser.id) ||
     Number(item.claimedBy) === Number(currentUser.id)
   );
+}
+
+function syncRoleHint() {
+  if (!currentUser) {
+    setText('deliveryStatus', 'Enable GPS to get nearby delivery jobs up to 250 km.');
+    return;
+  }
+  if (!isDeliveryAccount()) {
+    setText('deliveryStatus', `Current role is ${currentUser.role}. Delivery role required for claim actions.`);
+  }
 }
 
 async function refreshAuth() {
@@ -32,6 +51,9 @@ async function refreshAuth() {
     currentUser = null;
     setText('deliveryAuthBadge', 'Guest');
   }
+  syncRoleHint();
+  await feedback?.onAuthChanged?.();
+  connectRealtime();
 }
 
 function renderJobs(items) {
@@ -58,7 +80,7 @@ function renderJobs(items) {
           <div class="card-actions">
             <button class="kb-btn kb-btn-ghost view-job-btn" data-id="${item.id}" type="button">View</button>
             ${
-              item.status === 'open'
+              item.status === 'open' && isDeliveryAccount()
                 ? `<button class="kb-btn kb-btn-primary claim-job-btn" data-id="${item.id}" type="button">Claim</button>`
                 : ''
             }
@@ -85,6 +107,11 @@ function buildBaseFilters() {
 }
 
 async function refreshJobs() {
+  if (!isDeliveryAccount()) {
+    currentJobs = [];
+    renderJobs([]);
+    return;
+  }
   try {
     const statusFilter = el('deliveryStatusFilter')?.value || 'open';
     const baseFilters = buildBaseFilters();
@@ -139,6 +166,27 @@ async function detectGps() {
   );
 }
 
+function connectRealtime() {
+  if (stream) stream.close();
+  stream = new EventSource('/api/events/stream');
+
+  stream.addEventListener('delivery.updated', async () => {
+    if (!isDeliveryAccount()) return;
+    await refreshJobs().catch(() => null);
+    playNotificationSound();
+  });
+
+  stream.addEventListener('notifications.invalidate', () => {
+    if (!isDeliveryAccount()) return;
+    playNotificationSound();
+  });
+
+  stream.addEventListener('feedback.updated', async () => {
+    await feedback?.refreshMyFeedback?.().catch(() => null);
+    playNotificationSound();
+  });
+}
+
 el('deliveryLoginForm')?.addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -150,10 +198,37 @@ el('deliveryLoginForm')?.addEventListener('submit', async (event) => {
     });
     form.reset();
     await refreshAuth();
-    setText('deliveryStatus', 'Login successful.');
+    if (!isDeliveryAccount()) {
+      setText('deliveryStatus', 'Login successful, but this account is not a delivery account.');
+      return;
+    }
+    setText('deliveryStatus', 'Delivery login successful.');
     await refreshJobs();
+    unlockNotificationSound();
   } catch (error) {
     setText('deliveryStatus', error.message || 'Login failed');
+  }
+});
+
+el('deliverySignupForm')?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  setText('deliveryStatus', 'Creating delivery executive account...');
+  try {
+    await api.authRegister({
+      fullName: form.fullName.value.trim(),
+      email: form.email.value.trim(),
+      phoneNumber: form.phoneNumber.value.trim(),
+      password: form.password.value,
+      role: 'delivery'
+    });
+    form.reset();
+    await refreshAuth();
+    setText('deliveryStatus', 'Delivery account created and logged in.');
+    await refreshJobs();
+    unlockNotificationSound();
+  } catch (error) {
+    setText('deliveryStatus', error.message || 'Unable to create delivery account');
   }
 });
 
@@ -192,13 +267,14 @@ el('deliveryJobs')?.addEventListener('click', async (event) => {
 
   const claimBtn = target.closest('.claim-job-btn');
   if (claimBtn) {
-    if (!currentUser) {
-      setText('deliveryStatus', 'Please login first.');
+    if (!isDeliveryAccount()) {
+      setText('deliveryStatus', 'Delivery role required to claim jobs.');
       return;
     }
     try {
       await api.claimDeliveryJob(claimBtn.dataset.id);
       setText('deliveryStatus', 'Delivery job claimed.');
+      playNotificationSound();
       await refreshJobs();
     } catch (error) {
       setText('deliveryStatus', error.message || 'Unable to claim delivery job');
@@ -208,8 +284,8 @@ el('deliveryJobs')?.addEventListener('click', async (event) => {
 
   const updateBtn = target.closest('.update-job-status-btn');
   if (updateBtn) {
-    if (!currentUser) {
-      setText('deliveryStatus', 'Please login first.');
+    if (!isDeliveryAccount()) {
+      setText('deliveryStatus', 'Delivery role required.');
       return;
     }
     const item = currentJobs.find((row) => Number(row.id) === Number(updateBtn.dataset.id));
@@ -234,8 +310,8 @@ el('deliveryJobs')?.addEventListener('click', async (event) => {
 
   const deleteBtn = target.closest('.delete-job-btn');
   if (deleteBtn) {
-    if (!currentUser) {
-      setText('deliveryStatus', 'Please login first.');
+    if (!isDeliveryAccount()) {
+      setText('deliveryStatus', 'Delivery role required.');
       return;
     }
     const item = currentJobs.find((row) => Number(row.id) === Number(deleteBtn.dataset.id));
@@ -256,12 +332,31 @@ el('deliveryLogoutBtn')?.addEventListener('click', async () => {
   try {
     await api.authLogout();
   } finally {
+    currentUser = null;
+    await feedback?.onAuthChanged?.();
+    if (stream) stream.close();
     window.location.reload();
   }
 });
 
 setInterval(() => {
-  refreshJobs().catch(() => null);
+  if (isDeliveryAccount()) refreshJobs().catch(() => null);
 }, 15000);
 
-refreshAuth().then(refreshJobs).catch(() => null);
+feedback = initFeedback({
+  portal: 'delivery',
+  getUser: () => currentUser,
+  formId: 'deliverySupportForm',
+  statusId: 'deliverySupportStatus',
+  listId: 'deliverySupportList',
+  refreshBtnId: 'deliverySupportRefreshBtn'
+});
+
+window.addEventListener('pointerdown', unlockNotificationSound, { once: true });
+window.addEventListener('keydown', unlockNotificationSound, { once: true });
+
+refreshAuth()
+  .then(async () => {
+    await refreshJobs();
+  })
+  .catch(() => null);

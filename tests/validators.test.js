@@ -111,11 +111,13 @@ test('authRegisterSchema validates optional totp pair', () => {
     email: 'a@b.com',
     phoneNumber: '9876543210',
     password: 'StrongPass#123',
+    role: 'seller',
     totpSecret: 'JBSWY3DPEHPK3PXP',
     totpCode: '123456'
   });
 
   assert.equal(withTotp.totpSecret, 'JBSWY3DPEHPK3PXP');
+  assert.equal(withTotp.role, 'seller');
 
   assert.throws(() =>
     authRegisterSchema.parse({

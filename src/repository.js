@@ -84,10 +84,10 @@ function createRepository(queryFn) {
       return result.rows[0] || null;
     },
 
-    async createUser({ email, fullName, phoneNumber = '', passwordHash }) {
+    async createUser({ email, fullName, phoneNumber = '', passwordHash, role = 'student' }) {
       const result = await run(
         `INSERT INTO users (email, full_name, phone_number, password_hash, role)
-         VALUES ($1, $2, $3, $4, 'student')
+         VALUES ($1, $2, $3, $4, $5)
          RETURNING
           id,
           email,
@@ -96,7 +96,7 @@ function createRepository(queryFn) {
           role,
           push_enabled AS "pushEnabled",
           totp_enabled AS "totpEnabled"`,
-        [email, fullName, phoneNumber || null, passwordHash]
+        [email, fullName, phoneNumber || null, passwordHash, role]
       );
       return result.rows[0];
     },
@@ -378,6 +378,36 @@ function createRepository(queryFn) {
          ORDER BY "listingCount" DESC`
       );
       return result.rows;
+    },
+
+    async listCitySuggestions({ q = '', areaCode = '', limit = 30 } = {}) {
+      const normalizedAreaCode = String(areaCode || '').trim();
+      const normalizedQuery = String(q || '').trim();
+      const queryPattern = normalizedQuery ? `%${normalizedQuery}%` : '';
+      const result = await run(
+        `WITH filtered AS (
+           SELECT
+            city,
+            COALESCE(serviceable_cities, ARRAY[]::TEXT[]) AS serviceable_cities
+           FROM listings l
+           WHERE
+            ($1 = '' OR l.area_code = $1 OR $1 = ANY(COALESCE(l.serviceable_area_codes, ARRAY[]::TEXT[])))
+         ),
+         cities AS (
+           SELECT DISTINCT TRIM(city) AS city FROM filtered
+           UNION
+           SELECT DISTINCT TRIM(serviceable_city) AS city
+           FROM filtered, UNNEST(serviceable_cities) AS serviceable_city
+         )
+         SELECT city
+         FROM cities
+         WHERE city <> ''
+           AND ($2 = '' OR city ILIKE $2)
+         ORDER BY city ASC
+         LIMIT $3`,
+        [normalizedAreaCode, queryPattern, limit]
+      );
+      return result.rows.map((item) => item.city).filter(Boolean);
     },
 
     async listNearbyStationery({ lat = null, lon = null, city = '', radiusKm = 250, limit = 8 }) {
@@ -676,11 +706,21 @@ function createRepository(queryFn) {
       }
       if (filters.city) {
         values.push(`%${filters.city}%`);
-        where.push(`l.city ILIKE $${values.length}`);
+        const cityParam = values.length;
+        where.push(
+          `(l.city ILIKE $${cityParam} OR EXISTS (
+            SELECT 1
+            FROM UNNEST(COALESCE(l.serviceable_cities, ARRAY[]::TEXT[])) AS serviceable_city
+            WHERE serviceable_city ILIKE $${cityParam}
+          ))`
+        );
       }
       if (filters.areaCode && filters.areaCode !== 'all') {
         values.push(filters.areaCode);
-        where.push(`l.area_code = $${values.length}`);
+        const areaCodeParam = values.length;
+        where.push(
+          `(l.area_code = $${areaCodeParam} OR $${areaCodeParam} = ANY(COALESCE(l.serviceable_area_codes, ARRAY[]::TEXT[])))`
+        );
       }
 
       const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -707,6 +747,8 @@ function createRepository(queryFn) {
           l.price,
           l.city,
           l.area_code AS "areaCode",
+          l.serviceable_area_codes AS "serviceableAreaCodes",
+          l.serviceable_cities AS "serviceableCities",
           l.latitude,
           l.longitude,
           l.created_by AS "createdBy",
@@ -779,11 +821,21 @@ function createRepository(queryFn) {
       }
       if (filters.city) {
         values.push(`%${filters.city}%`);
-        where.push(`city ILIKE $${values.length}`);
+        const cityParam = values.length;
+        where.push(
+          `(city ILIKE $${cityParam} OR EXISTS (
+            SELECT 1
+            FROM UNNEST(COALESCE(serviceable_cities, ARRAY[]::TEXT[])) AS serviceable_city
+            WHERE serviceable_city ILIKE $${cityParam}
+          ))`
+        );
       }
       if (filters.areaCode && filters.areaCode !== 'all') {
         values.push(filters.areaCode);
-        where.push(`area_code = $${values.length}`);
+        const areaCodeParam = values.length;
+        where.push(
+          `(area_code = $${areaCodeParam} OR $${areaCodeParam} = ANY(COALESCE(serviceable_area_codes, ARRAY[]::TEXT[])))`
+        );
       }
 
       const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -802,14 +854,16 @@ function createRepository(queryFn) {
       price,
       city,
       areaCode,
+      serviceableAreaCodes = [],
+      serviceableCities = [],
       latitude,
       longitude,
       createdBy
     }) {
       const result = await run(
         `INSERT INTO listings
-          (title, description, category, listing_type, seller_type, delivery_mode, payment_modes, price, city, area_code, latitude, longitude, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          (title, description, category, listing_type, seller_type, delivery_mode, payment_modes, price, city, area_code, serviceable_area_codes, serviceable_cities, latitude, longitude, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
          RETURNING
           id,
           title,
@@ -822,11 +876,29 @@ function createRepository(queryFn) {
           price,
           city,
           area_code AS "areaCode",
+          serviceable_area_codes AS "serviceableAreaCodes",
+          serviceable_cities AS "serviceableCities",
           latitude,
           longitude,
           created_by AS "createdBy",
           created_at AS "createdAt"`,
-        [title, description, category, listingType, sellerType, deliveryMode, paymentModes, price, city, areaCode, latitude, longitude, createdBy]
+        [
+          title,
+          description,
+          category,
+          listingType,
+          sellerType,
+          deliveryMode,
+          paymentModes,
+          price,
+          city,
+          areaCode,
+          serviceableAreaCodes,
+          serviceableCities,
+          latitude,
+          longitude,
+          createdBy
+        ]
       );
       return result.rows[0];
     },
@@ -845,6 +917,8 @@ function createRepository(queryFn) {
       price,
       city,
       areaCode,
+      serviceableAreaCodes = [],
+      serviceableCities = [],
       latitude,
       longitude
     }) {
@@ -861,8 +935,10 @@ function createRepository(queryFn) {
           price = $11,
           city = $12,
           area_code = $13,
-          latitude = $14,
-          longitude = $15
+          serviceable_area_codes = $14,
+          serviceable_cities = $15,
+          latitude = $16,
+          longitude = $17
          WHERE id = $1
            AND ($2::boolean OR created_by = $3)
          RETURNING
@@ -877,6 +953,8 @@ function createRepository(queryFn) {
           price,
           city,
           area_code AS "areaCode",
+          serviceable_area_codes AS "serviceableAreaCodes",
+          serviceable_cities AS "serviceableCities",
           latitude,
           longitude,
           created_by AS "createdBy",
@@ -895,6 +973,8 @@ function createRepository(queryFn) {
           price,
           city,
           areaCode,
+          serviceableAreaCodes,
+          serviceableCities,
           latitude,
           longitude
         ]
@@ -951,6 +1031,8 @@ function createRepository(queryFn) {
           l.price,
           l.city,
           l.area_code AS "areaCode",
+          l.serviceable_area_codes AS "serviceableAreaCodes",
+          l.serviceable_cities AS "serviceableCities",
           l.latitude,
           l.longitude,
           l.created_by AS "createdBy",
@@ -1405,6 +1487,81 @@ function createRepository(queryFn) {
         endpoint: item.endpoint,
         keys: { p256dh: item.p256dh, auth: item.auth }
       }));
+    },
+
+    async createFeedback({
+      userId = null,
+      sourcePortal = 'client',
+      senderName,
+      senderEmail,
+      senderRole = 'guest',
+      subject,
+      message,
+      attachmentKey = ''
+    }) {
+      const result = await run(
+        `INSERT INTO customer_feedback
+          (user_id, source_portal, sender_name, sender_email, sender_role, subject, message, attachment_key)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         RETURNING
+          id,
+          user_id AS "userId",
+          source_portal AS "sourcePortal",
+          sender_name AS "senderName",
+          sender_email AS "senderEmail",
+          sender_role AS "senderRole",
+          subject,
+          message,
+          attachment_key AS "attachmentKey",
+          created_at AS "createdAt"`,
+        [userId, sourcePortal, senderName, senderEmail, senderRole, subject, message, attachmentKey]
+      );
+      return result.rows[0] || null;
+    },
+
+    async listFeedbackForUser({ userId, limit = 20, offset = 0 }) {
+      const result = await run(
+        `SELECT
+          id,
+          user_id AS "userId",
+          source_portal AS "sourcePortal",
+          sender_name AS "senderName",
+          sender_email AS "senderEmail",
+          sender_role AS "senderRole",
+          subject,
+          message,
+          attachment_key AS "attachmentKey",
+          created_at AS "createdAt"
+         FROM customer_feedback
+         WHERE user_id = $1
+         ORDER BY created_at DESC
+         LIMIT $2
+         OFFSET $3`,
+        [userId, limit, offset]
+      );
+      return result.rows;
+    },
+
+    async listFeedback({ limit = 50, offset = 0 }) {
+      const result = await run(
+        `SELECT
+          id,
+          user_id AS "userId",
+          source_portal AS "sourcePortal",
+          sender_name AS "senderName",
+          sender_email AS "senderEmail",
+          sender_role AS "senderRole",
+          subject,
+          message,
+          attachment_key AS "attachmentKey",
+          created_at AS "createdAt"
+         FROM customer_feedback
+         ORDER BY created_at DESC
+         LIMIT $1
+         OFFSET $2`,
+        [limit, offset]
+      );
+      return result.rows;
     },
 
     async createDeliveryJob({ listingId, pickupCity, pickupAreaCode = 'other', pickupLatitude = null, pickupLongitude = null, deliveryMode, createdBy }) {

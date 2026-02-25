@@ -1,12 +1,14 @@
 import { initAi } from './ai.js';
 import { initAuth } from './auth.js';
 import { initCommunity } from './community.js';
+import { initFeedback } from './feedback.js';
 import { initLocation } from './location.js';
 import { initMarketplace } from './marketplace.js';
 import { initNotifications } from './notifications.js';
 import { initProfile } from './profile.js';
 import { initPwa } from './pwa.js';
 import { initRealtime } from './realtime.js';
+import { unlockNotificationSound } from './sound.js';
 import { state } from './state.js';
 import { el, hideModal } from './ui.js';
 
@@ -108,11 +110,22 @@ function boot() {
     openAuthModal: (message) => auth?.openAuthModal(message)
   });
 
+  const feedback = initFeedback({
+    portal: 'client',
+    getUser: () => state.user,
+    formId: 'supportForm',
+    statusId: 'supportStatus',
+    listId: 'supportList',
+    refreshBtnId: 'supportRefreshBtn',
+    onAuthRequired: (message) => auth?.openAuthModal(message)
+  });
+
   const realtime = initRealtime({
     state,
     marketplace,
     community,
-    notifications
+    notifications,
+    feedback
   });
 
   auth = initAuth({
@@ -124,6 +137,7 @@ function boot() {
         state.user ? community.loadCategories().then(() => community.refreshPosts()) : Promise.resolve(),
         profile.onAuthChanged(),
         notifications.onAuthChanged(),
+        feedback.onAuthChanged(),
         realtime.onAuthChanged()
       ]);
       syncTabView();
@@ -173,11 +187,15 @@ function boot() {
         state.user ? community.refreshPosts() : Promise.resolve(),
         profile.refreshUser(),
         notifications.refresh(),
+        feedback.refreshMyFeedback(),
         realtime.onAuthChanged()
       ]);
       syncTabView();
       syncGuestPromptWatch();
     });
+
+  window.addEventListener('pointerdown', unlockNotificationSound, { once: true });
+  window.addEventListener('keydown', unlockNotificationSound, { once: true });
 }
 
 boot();

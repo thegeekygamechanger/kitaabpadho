@@ -13,7 +13,7 @@
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/assets/css/app.css?v=20260225b" />
+    <link rel="stylesheet" href="/assets/css/app.css?v=20260225c" />
   </head>
   <body>
     <header class="kb-header">
@@ -252,6 +252,25 @@
         <p id="aiStatus" class="muted"></p>
         <article id="aiAnswer" class="ai-answer"></article>
       </section>
+
+      <section id="supportPanel" class="panel">
+        <div class="panel-head">
+          <h2>Customer Service Query</h2>
+          <button id="supportRefreshBtn" class="kb-btn kb-btn-ghost" type="button">Refresh</button>
+        </div>
+        <form id="supportForm" class="drawer">
+          <input class="kb-input" name="senderName" placeholder="Your name" />
+          <input class="kb-input" name="senderEmail" type="email" placeholder="Your email" />
+          <input class="kb-input" name="subject" placeholder="Subject" required />
+          <textarea class="kb-textarea" name="message" placeholder="Tell us your issue or request..." required></textarea>
+          <p class="muted support-user-hint"></p>
+          <div class="drawer-actions">
+            <button class="kb-btn kb-btn-primary" type="submit">Submit Query</button>
+          </div>
+          <p id="supportStatus" class="muted"></p>
+        </form>
+        <div id="supportList" class="cards"></div>
+      </section>
     </main>
 
     <footer class="kb-footer">
@@ -277,6 +296,11 @@
             <input class="kb-input" name="email" type="email" placeholder="Email" required />
             <input class="kb-input" name="phoneNumber" type="tel" placeholder="Phone number (required)" required />
             <input class="kb-input" name="password" type="password" placeholder="Password (min 8)" required />
+            <select class="kb-select" name="role">
+              <option value="student">Student (Buyer)</option>
+              <option value="seller">Seller</option>
+              <option value="delivery">Delivery Executive</option>
+            </select>
             <input class="kb-input hidden" name="totpSecret" placeholder="TOTP secret (auto generated)" />
             <button id="signupTotpSetupBtn" class="kb-btn kb-btn-dark" type="button">Generate TOTP QR</button>
             <img id="signupTotpQr" alt="TOTP QR" class="signup-qr hidden" />
@@ -313,7 +337,7 @@
       </div>
     </section>
 
-    <script type="module" src="/assets/js/app.js?v=20260225b"></script>
+    <script type="module" src="/assets/js/app.js?v=20260225c"></script>
   </body>
 </html>
 

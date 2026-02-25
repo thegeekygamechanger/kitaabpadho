@@ -49,7 +49,7 @@ export function initMarketplace({ state }) {
     if (state.location.coords) {
       filters.lat = state.location.coords.lat;
       filters.lon = state.location.coords.lon;
-      filters.radiusKm = state.location.radiusKm || 200;
+      filters.radiusKm = state.location.radiusKm || 250;
     }
     return filters;
   }
@@ -172,6 +172,8 @@ export function initMarketplace({ state }) {
             <p class="muted">Location: ${escapeHtml(listing.city || 'Unknown')} | ${escapeHtml(
               (listing.areaCode || 'other').replaceAll('_', ' ')
             )}</p>
+            <p class="muted">Serviceable Areas: ${escapeHtml((listing.serviceableAreaCodes || []).join(', ') || '-')}</p>
+            <p class="muted">Serviceable Cities: ${escapeHtml((listing.serviceableCities || []).join(', ') || '-')}</p>
             <p class="muted">Delivery: ${escapeHtml(listing.deliveryMode || 'peer_to_peer')} | Payments: ${escapeHtml(paymentText)}</p>
             <p class="listing-detail-description">${escapeHtml(listing.description || '')}</p>
             <div class="drawer-actions">
@@ -298,6 +300,8 @@ export function initMarketplace({ state }) {
           price: nextPrice,
           city: nextCity.trim() || currentListing.city || 'Unknown',
           areaCode: currentListing.areaCode || 'other',
+          serviceableAreaCodes: Array.isArray(currentListing.serviceableAreaCodes) ? currentListing.serviceableAreaCodes : [],
+          serviceableCities: Array.isArray(currentListing.serviceableCities) ? currentListing.serviceableCities : [],
           latitude: Number(currentListing.latitude),
           longitude: Number(currentListing.longitude)
         });

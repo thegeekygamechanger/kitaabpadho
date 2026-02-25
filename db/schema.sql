@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS listings (
   price NUMERIC(10,2) NOT NULL DEFAULT 0,
   city TEXT NOT NULL,
   area_code TEXT NOT NULL DEFAULT 'other' CHECK (area_code IN ('loni_kalbhor','hadapsar','camp','other')),
+  serviceable_area_codes TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+  serviceable_cities TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
   latitude DOUBLE PRECISION NOT NULL,
   longitude DOUBLE PRECISION NOT NULL,
   created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
@@ -137,9 +139,24 @@ CREATE TABLE IF NOT EXISTS ai_chat_memory (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS customer_feedback (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  source_portal TEXT NOT NULL DEFAULT 'client',
+  sender_name TEXT NOT NULL,
+  sender_email TEXT NOT NULL,
+  sender_role TEXT NOT NULL DEFAULT 'guest',
+  subject TEXT NOT NULL DEFAULT '',
+  message TEXT NOT NULL,
+  attachment_key TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_listings_geo ON listings (latitude, longitude);
 CREATE INDEX IF NOT EXISTS idx_listings_created_at ON listings (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_listings_filters ON listings (listing_type, category, area_code);
+CREATE INDEX IF NOT EXISTS idx_listings_serviceable_areas ON listings USING GIN (serviceable_area_codes);
+CREATE INDEX IF NOT EXISTS idx_listings_serviceable_cities ON listings USING GIN (serviceable_cities);
 CREATE INDEX IF NOT EXISTS idx_media_listing_id ON media_assets (listing_id);
 CREATE INDEX IF NOT EXISTS idx_community_posts_created_at ON community_posts (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_community_posts_category ON community_posts (category_id);
@@ -153,6 +170,8 @@ CREATE INDEX IF NOT EXISTS idx_ai_chat_memory_user_created ON ai_chat_memory (us
 CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions (user_id);
 CREATE INDEX IF NOT EXISTS idx_delivery_jobs_status_created ON delivery_jobs (status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_delivery_jobs_geo ON delivery_jobs (pickup_latitude, pickup_longitude);
+CREATE INDEX IF NOT EXISTS idx_customer_feedback_user_created ON customer_feedback (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_customer_feedback_created ON customer_feedback (created_at DESC);
 
 INSERT INTO community_categories (slug, name, description)
 VALUES

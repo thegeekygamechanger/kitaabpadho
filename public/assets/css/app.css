@@ -535,6 +535,26 @@ body {
   font-size: 0.88rem;
 }
 
+.serviceable-area-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.45rem;
+  margin-bottom: 0.55rem;
+}
+
+.serviceable-area-grid label {
+  border: 1px solid #cfe0ff;
+  border-radius: 10px;
+  padding: 0.4rem 0.55rem;
+  background: #f6f9ff;
+  color: #234f98;
+  font-size: 0.86rem;
+}
+
+.support-user-hint {
+  margin: 0.2rem 0 0;
+}
+
 .toggle-row {
   display: flex;
   align-items: center;

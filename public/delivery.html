@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0d4cb1" />
     <title>📚 Delivery Executive Portal | KitaabPadho</title>
     <link rel="icon" type="image/svg+xml" href="/assets/icons/bookish.svg" />
-    <link rel="stylesheet" href="/assets/css/app.css?v=20260225b" />
+    <link rel="stylesheet" href="/assets/css/app.css?v=20260225c" />
   </head>
   <body>
     <header class="kb-header">
@@ -33,11 +33,22 @@
           <h2>Delivery Login</h2>
           <p id="deliveryAuthBadge" class="muted">Guest</p>
         </div>
-        <form id="deliveryLoginForm" class="drawer" style="max-width:460px">
-          <input class="kb-input" name="email" type="email" placeholder="Email" required />
-          <input class="kb-input" name="password" type="password" placeholder="Password" required />
-          <button class="kb-btn kb-btn-primary" type="submit">Login</button>
-        </form>
+        <div class="auth-grid">
+          <form id="deliveryLoginForm" class="drawer">
+            <h3>Login</h3>
+            <input class="kb-input" name="email" type="email" placeholder="Email" required />
+            <input class="kb-input" name="password" type="password" placeholder="Password" required />
+            <button class="kb-btn kb-btn-primary" type="submit">Login</button>
+          </form>
+          <form id="deliverySignupForm" class="drawer">
+            <h3>Signup as Delivery Executive</h3>
+            <input class="kb-input" name="fullName" placeholder="Full name" required />
+            <input class="kb-input" name="email" type="email" placeholder="Email" required />
+            <input class="kb-input" name="phoneNumber" type="tel" placeholder="Phone number" required />
+            <input class="kb-input" name="password" type="password" placeholder="Password (min 8)" required />
+            <button class="kb-btn kb-btn-dark" type="submit">Create Delivery Account</button>
+          </form>
+        </div>
         <div class="drawer-actions">
           <select id="deliveryStatusFilter" class="kb-select">
             <option value="open">Open</option>
@@ -58,12 +69,31 @@
         </div>
         <div id="deliveryJobs" class="cards"></div>
       </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Customer Service Query</h2>
+          <button id="deliverySupportRefreshBtn" class="kb-btn kb-btn-ghost" type="button">Refresh</button>
+        </div>
+        <form id="deliverySupportForm" class="drawer">
+          <input class="kb-input" name="senderName" placeholder="Your name" />
+          <input class="kb-input" name="senderEmail" type="email" placeholder="Your email" />
+          <input class="kb-input" name="subject" placeholder="Subject" required />
+          <textarea class="kb-textarea" name="message" placeholder="Your query..." required></textarea>
+          <p class="muted support-user-hint"></p>
+          <div class="drawer-actions">
+            <button class="kb-btn kb-btn-primary" type="submit">Submit Query</button>
+          </div>
+          <p id="deliverySupportStatus" class="muted"></p>
+        </form>
+        <div id="deliverySupportList" class="cards"></div>
+      </section>
     </main>
 
     <footer class="kb-footer">
       <p>Made by UPSC aspirant. Built for learners across India. KitaabPadhoIndia. @2026 copyright</p>
     </footer>
 
-    <script type="module" src="/assets/js/delivery.js?v=20260225b"></script>
+    <script type="module" src="/assets/js/delivery.js?v=20260225c"></script>
   </body>
 </html>

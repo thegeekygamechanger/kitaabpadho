@@ -3,6 +3,7 @@ const { z } = require('zod');
 const categories = ['book', 'instrument', 'notes', 'video', 'pdf', 'stationery', 'stationary'];
 const listingTypes = ['rent', 'buy', 'sell'];
 const areaCodes = ['loni_kalbhor', 'hadapsar', 'camp', 'other'];
+const accountRoles = ['student', 'seller', 'delivery'];
 const sellerTypes = ['student', 'library', 'reseller', 'wholesaler', 'college', 'individual_seller', 'shop'];
 const deliveryModes = ['peer_to_peer', 'seller_dedicated', 'kpi_dedicated'];
 const paymentModes = ['cod', 'upi', 'card', 'razorpay'];
@@ -10,6 +11,7 @@ const paymentModes = ['cod', 'upi', 'card', 'razorpay'];
 const categoryEnum = z.enum(categories);
 const listingTypeEnum = z.enum(listingTypes);
 const areaCodeEnum = z.enum(areaCodes);
+const accountRoleEnum = z.enum(accountRoles);
 const sellerTypeEnum = z.enum(sellerTypes);
 const deliveryModeEnum = z.enum(deliveryModes);
 const paymentModeEnum = z.enum(paymentModes);
@@ -33,7 +35,9 @@ const listingSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   city: z.string().trim().min(2).max(100).optional().default('Unknown'),
-  areaCode: areaCodeEnum.optional().default('other')
+  areaCode: areaCodeEnum.optional().default('other'),
+  serviceableAreaCodes: z.array(areaCodeEnum).max(20).optional().default([]),
+  serviceableCities: z.array(z.string().trim().min(2).max(100)).max(30).optional().default([])
 });
 const listingUpdateSchema = listingSchema;
 
@@ -60,6 +64,7 @@ const authRegisterSchema = z
     fullName: z.string().trim().min(2).max(120),
     phoneNumber: z.string().trim().regex(/^[0-9]{10,15}$/),
     password: z.string().min(8).max(128),
+    role: accountRoleEnum.optional().default('student'),
     totpSecret: z.string().trim().toUpperCase().regex(/^[A-Z2-7]{16,}$/).optional(),
     totpCode: totpCodeSchema.optional()
   })
@@ -193,6 +198,19 @@ const deliveryJobsQuerySchema = z.object({
   limit: optionalNumber(z.number().int().min(1).max(100)).default(25),
   offset: optionalNumber(z.number().int().min(0).max(10000)).default(0)
 });
+
+const feedbackCreateSchema = z.object({
+  sourcePortal: z.enum(['client', 'seller', 'delivery', 'admin']).optional().default('client'),
+  senderName: z.string().trim().min(2).max(120).optional(),
+  senderEmail: z.string().trim().email().max(180).optional(),
+  subject: z.string().trim().min(2).max(160),
+  message: z.string().trim().min(8).max(3000)
+});
+
+const feedbackListQuerySchema = z.object({
+  limit: optionalNumber(z.number().int().min(1).max(100)).default(20),
+  offset: optionalNumber(z.number().int().min(0).max(10000)).default(0)
+});
 const deliveryJobStatusSchema = z.object({
   status: z.enum(['open', 'claimed', 'completed', 'cancelled'])
 });
@@ -206,6 +224,7 @@ module.exports = {
   categories,
   listingTypes,
   areaCodes,
+  accountRoles,
   sellerTypes,
   deliveryModes,
   paymentModes,
@@ -233,5 +252,7 @@ module.exports = {
   pushSubscribeSchema,
   deliveryJobsQuerySchema,
   deliveryJobStatusSchema,
-  razorpayOrderSchema
+  razorpayOrderSchema,
+  feedbackCreateSchema,
+  feedbackListQuerySchema
 };

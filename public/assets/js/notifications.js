@@ -1,4 +1,5 @@
 import { api } from './api.js';
+import { playNotificationSound } from './sound.js';
 import { el, escapeHtml, renderEmpty, setText } from './ui.js';
 
 function fmtTime(value) {
@@ -20,6 +21,7 @@ export function initNotifications({ state, openAuthModal }) {
   const refreshBtn = el('notificationsRefreshBtn');
   const readAllBtn = el('notificationsReadAllBtn');
   let pollTimer = null;
+  let lastUnreadCount = 0;
 
   function isAuthed() {
     return Boolean(state.user?.id);
@@ -33,6 +35,7 @@ export function initNotifications({ state, openAuthModal }) {
       if (listNode) listNode.innerHTML = '';
       if (countNode) countNode.textContent = '0';
       setText('notificationsStatus', 'Login to receive alerts for new arrivals and community updates.');
+      lastUnreadCount = 0;
     }
   }
 
@@ -76,6 +79,8 @@ export function initNotifications({ state, openAuthModal }) {
       });
       renderList(result.data || []);
       state.notifications.unreadCount = Number(result.meta?.unreadCount || 0);
+      if (state.notifications.unreadCount > lastUnreadCount) playNotificationSound();
+      lastUnreadCount = state.notifications.unreadCount;
       if (countNode) countNode.textContent = String(state.notifications.unreadCount);
       setText('notificationsStatus', `Unread: ${state.notifications.unreadCount}`);
     } catch (error) {

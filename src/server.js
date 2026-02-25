@@ -48,7 +48,9 @@ const {
   pushSubscribeSchema,
   deliveryJobsQuerySchema,
   deliveryJobStatusSchema,
-  razorpayOrderSchema
+  razorpayOrderSchema,
+  feedbackCreateSchema,
+  feedbackListQuerySchema
 } = require('./validators');
 
 function parseId(value) {
@@ -96,6 +98,12 @@ function titleCaseFromCode(value) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function normalizeRole(inputRole) {
+  const role = String(inputRole || 'student').trim().toLowerCase();
+  if (role === 'seller' || role === 'delivery' || role === 'student') return role;
+  return 'student';
+}
+
 function uniquePushString(target, value) {
   const normalized = String(value || '').trim();
   if (normalized.length < 2) return;
@@ -136,6 +144,14 @@ function deriveLocalityContext(geo, nearbyCities = []) {
 
 function truncateText(value, maxLen) {
   return String(value || '').slice(0, maxLen);
+}
+
+function buildFeedbackObjectKey(sourcePortal = 'client') {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const stamp = `${now.getTime()}-${Math.random().toString(36).slice(2, 10)}`;
+  return `feedback/${sourcePortal}/${year}/${month}/${stamp}.json`;
 }
 
 function normalizeArray(values) {
@@ -302,6 +318,23 @@ function createApp(deps = {}) {
       const freshUser = await repository.findUserById(req.user.id);
       if (!freshUser) return res.status(401).json({ error: 'Authentication required' });
       if (freshUser.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+      req.user = { ...req.user, role: freshUser.role, email: freshUser.email, fullName: freshUser.fullName };
+      return next();
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  };
+
+  const requireRole = (allowedRoles = []) => async (req, res, next) => {
+    if (!req.user?.id) return res.status(401).json({ error: 'Authentication required' });
+    try {
+      const freshUser = await repository.findUserById(req.user.id);
+      if (!freshUser) return res.status(401).json({ error: 'Authentication required' });
+      const role = String(freshUser.role || '').toLowerCase();
+      const allowed = new Set(allowedRoles.map((item) => String(item || '').toLowerCase()));
+      if (role !== 'admin' && !allowed.has(role)) {
+        return res.status(403).json({ error: `Role ${allowedRoles.join(' or ')} required` });
+      }
       req.user = { ...req.user, role: freshUser.role, email: freshUser.email, fullName: freshUser.fullName };
       return next();
     } catch (error) {
@@ -486,7 +519,8 @@ function createApp(deps = {}) {
         email: body.email,
         fullName: body.fullName,
         phoneNumber: body.phoneNumber || '',
-        passwordHash
+        passwordHash,
+        role: normalizeRole(body.role)
       });
       if (wantsTotpOnSignup && typeof repository.enableTotp === 'function') {
         const updated = await repository.enableTotp({ userId: user.id, secret: body.totpSecret });
@@ -501,7 +535,7 @@ function createApp(deps = {}) {
         entityType: 'user',
         entityId: user.id,
         summary: 'New user account registered',
-        details: { email: user.email }
+        details: { email: user.email, role: user.role }
       });
       return res.status(201).json({ authenticated: true, user: toPublicUser(user) });
     } catch (error) {
@@ -821,6 +855,96 @@ function createApp(deps = {}) {
     }
   });
 
+  app.post('/api/feedback', async (req, res) => {
+    try {
+      const body = feedbackCreateSchema.parse(req.body);
+      if (typeof repository.createFeedback !== 'function') {
+        return res.status(500).json({ error: 'Feedback API is not available' });
+      }
+
+      const authUser = req.user?.id ? await repository.findUserById(req.user.id).catch(() => null) : null;
+      const senderName = authUser?.fullName || sanitizeText(body.senderName || '', 120);
+      const senderEmail = authUser?.email || sanitizeText(body.senderEmail || '', 180);
+      if (!senderName || !senderEmail) {
+        return res.status(400).json({ error: 'Name and email are required for feedback.' });
+      }
+
+      const sourcePortal = body.sourcePortal || 'client';
+      const feedbackPayload = {
+        sourcePortal,
+        senderName,
+        senderEmail,
+        senderRole: authUser?.role || 'guest',
+        subject: sanitizeText(body.subject, 160),
+        message: sanitizeText(body.message, 3000)
+      };
+
+      let attachmentKey = '';
+      const feedbackObject = {
+        ...feedbackPayload,
+        userId: authUser?.id || null,
+        submittedAt: new Date().toISOString()
+      };
+      const serializedFeedback = JSON.stringify(feedbackObject, null, 2);
+      try {
+        const key = buildFeedbackObjectKey(sourcePortal);
+        const uploaded = await uploadMediaFn({
+          buffer: Buffer.from(serializedFeedback),
+          contentType: 'application/json',
+          key
+        });
+        attachmentKey = uploaded?.key || key;
+      } catch {
+        attachmentKey = '';
+      }
+
+      const feedback = await repository.createFeedback({
+        ...feedbackPayload,
+        userId: authUser?.id || null,
+        attachmentKey
+      });
+
+      await logProjectAction(req, {
+        actor: authUser || req.user,
+        actionType: 'feedback.create',
+        entityType: 'feedback',
+        entityId: feedback?.id || null,
+        summary: 'Customer support query submitted',
+        details: { sourcePortal, senderRole: feedbackPayload.senderRole }
+      });
+
+      if (authUser?.id) {
+        publishRealtimeEvent('feedback.updated', { type: 'feedback_created', feedbackId: feedback?.id }, authUser.id);
+      }
+
+      return res.status(201).json({ ok: true, feedback, r2Enabled: r2EnabledFlag });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/feedback/mine', requireAuth, async (req, res) => {
+    try {
+      if (typeof repository.listFeedbackForUser !== 'function') {
+        return res.json({ data: [], meta: { limit: 20, offset: 0 } });
+      }
+      const queryFilters = feedbackListQuerySchema.parse(req.query);
+      const data = await repository.listFeedbackForUser({
+        userId: req.user.id,
+        limit: queryFilters.limit,
+        offset: queryFilters.offset
+      });
+      return res.json({
+        data,
+        meta: { limit: queryFilters.limit, offset: queryFilters.offset, total: data.length }
+      });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid query' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get('/api/push/public-key', (_, res) => {
     return res.json({
       publicKey: appConfig.push?.vapidPublicKey || ''
@@ -955,7 +1079,7 @@ function createApp(deps = {}) {
           label: item.areaName || titleCaseFromCode(item.areaCode),
           listingCount: Number(item.listingCount || 0)
         })),
-        hint: 'Listings are dynamically sorted by distance from your location (200 km radius).'
+        hint: 'Listings are dynamically sorted by distance from your location (250 km radius).'
       });
     } catch {
       const localityOptions = nearbyCities.slice(0, 8).map((item) => ({
@@ -977,8 +1101,24 @@ function createApp(deps = {}) {
           label: item.areaName || titleCaseFromCode(item.areaCode),
           listingCount: Number(item.listingCount || 0)
         })),
-        hint: 'Geocoder unavailable, but geo-filtering still works (200 km radius).'
+        hint: 'Geocoder unavailable, but geo-filtering still works (250 km radius).'
       });
+    }
+  });
+
+  app.get('/api/location/cities', async (req, res) => {
+    try {
+      const q = String(req.query.q || '').trim();
+      const areaCode = String(req.query.areaCode || '').trim();
+      const limitRaw = Number(req.query.limit || 30);
+      const limit = Number.isFinite(limitRaw) ? Math.min(100, Math.max(1, limitRaw)) : 30;
+      if (typeof repository.listCitySuggestions !== 'function') {
+        return res.json({ data: [] });
+      }
+      const data = await repository.listCitySuggestions({ q, areaCode, limit });
+      return res.json({ data });
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
     }
   });
 
@@ -987,7 +1127,7 @@ function createApp(deps = {}) {
       const parsed = listingQuerySchema.parse(req.query);
       const filters =
         typeof parsed.lat === 'number' && typeof parsed.lon === 'number' && typeof parsed.radiusKm !== 'number'
-          ? { ...parsed, radiusKm: 200 }
+          ? { ...parsed, radiusKm: 250 }
           : parsed;
       const data = await repository.listListings(filters);
       const total = await repository.countListings(filters);
@@ -1018,14 +1158,20 @@ function createApp(deps = {}) {
     }
   });
 
-  app.post('/api/listings', listingWriteLimiter, requireAuth, async (req, res) => {
+  app.post('/api/listings', listingWriteLimiter, requireRole(['seller']), async (req, res) => {
     try {
       const body = listingSchema.parse(req.body);
+      const serviceableAreaCodes = [...new Set((body.serviceableAreaCodes || []).map((item) => String(item || '').trim()))];
+      const serviceableCities = [
+        ...new Set((body.serviceableCities || []).map((item) => sanitizeText(String(item || ''), 100)).filter(Boolean))
+      ];
       const listing = await repository.createListing({
         ...body,
         title: body.title.trim(),
         description: body.description.trim(),
         city: body.city.trim(),
+        serviceableAreaCodes,
+        serviceableCities,
         createdBy: req.user.id
       });
       await logProjectAction(req, {
@@ -1037,6 +1183,8 @@ function createApp(deps = {}) {
           listingType: listing.listingType,
           category: listing.category,
           areaCode: listing.areaCode,
+          serviceableAreaCodes: listing.serviceableAreaCodes || [],
+          serviceableCities: listing.serviceableCities || [],
           sellerType: listing.sellerType,
           deliveryMode: listing.deliveryMode
         }
@@ -1110,7 +1258,7 @@ function createApp(deps = {}) {
     }
   });
 
-  app.put('/api/listings/:id', listingWriteLimiter, requireAuth, async (req, res) => {
+  app.put('/api/listings/:id', listingWriteLimiter, requireRole(['seller']), async (req, res) => {
     const listingId = parseId(req.params.id);
     if (!listingId) return res.status(400).json({ error: 'Invalid listing id' });
 
@@ -1127,6 +1275,10 @@ function createApp(deps = {}) {
       }
 
       const body = listingUpdateSchema.parse(req.body);
+      const serviceableAreaCodes = [...new Set((body.serviceableAreaCodes || []).map((item) => String(item || '').trim()))];
+      const serviceableCities = [
+        ...new Set((body.serviceableCities || []).map((item) => sanitizeText(String(item || ''), 100)).filter(Boolean))
+      ];
       const updated = await repository.updateListing({
         listingId,
         actorId: req.user.id,
@@ -1141,6 +1293,8 @@ function createApp(deps = {}) {
         price: Number(body.price),
         city: sanitizeText(body.city, 100),
         areaCode: body.areaCode,
+        serviceableAreaCodes,
+        serviceableCities,
         latitude: Number(body.latitude),
         longitude: Number(body.longitude)
       });
@@ -1155,6 +1309,8 @@ function createApp(deps = {}) {
           listingType: updated.listingType,
           category: updated.category,
           areaCode: updated.areaCode,
+          serviceableAreaCodes: updated.serviceableAreaCodes || [],
+          serviceableCities: updated.serviceableCities || [],
           sellerType: updated.sellerType,
           deliveryMode: updated.deliveryMode
         }
@@ -1603,7 +1759,7 @@ function createApp(deps = {}) {
     }
   });
 
-  app.get('/api/delivery/jobs/:id', requireAuth, async (req, res) => {
+  app.get('/api/delivery/jobs/:id', requireRole(['delivery', 'seller']), async (req, res) => {
     const jobId = parseId(req.params.id);
     if (!jobId) return res.status(400).json({ error: 'Invalid delivery job id' });
 
@@ -1619,7 +1775,7 @@ function createApp(deps = {}) {
     }
   });
 
-  app.put('/api/delivery/jobs/:id/status', requireAuth, async (req, res) => {
+  app.put('/api/delivery/jobs/:id/status', requireRole(['delivery', 'seller']), async (req, res) => {
     const jobId = parseId(req.params.id);
     if (!jobId) return res.status(400).json({ error: 'Invalid delivery job id' });
     try {
@@ -1697,7 +1853,7 @@ function createApp(deps = {}) {
     }
   });
 
-  app.delete('/api/delivery/jobs/:id', requireAuth, async (req, res) => {
+  app.delete('/api/delivery/jobs/:id', requireRole(['delivery', 'seller']), async (req, res) => {
     const jobId = parseId(req.params.id);
     if (!jobId) return res.status(400).json({ error: 'Invalid delivery job id' });
     try {
@@ -1740,7 +1896,7 @@ function createApp(deps = {}) {
     }
   });
 
-  app.post('/api/delivery/jobs/:id/claim', requireAuth, async (req, res) => {
+  app.post('/api/delivery/jobs/:id/claim', requireRole(['delivery']), async (req, res) => {
     const jobId = parseId(req.params.id);
     if (!jobId) return res.status(400).json({ error: 'Invalid delivery job id' });
     try {
@@ -2041,6 +2197,25 @@ function createApp(deps = {}) {
           limit: filters.limit,
           offset: filters.offset
         }
+      });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid query' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/admin/feedback', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const filters = feedbackListQuerySchema.parse(req.query);
+      const data = typeof repository.listFeedback === 'function' ? await repository.listFeedback(filters) : [];
+      await logProjectAction(req, {
+        actionType: 'admin.feedback_view',
+        entityType: 'admin_panel',
+        summary: 'Admin viewed customer support queries'
+      });
+      return res.json({
+        data,
+        meta: { limit: filters.limit, offset: filters.offset, total: data.length }
       });
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid query' });

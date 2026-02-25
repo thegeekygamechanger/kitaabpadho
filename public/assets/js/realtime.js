@@ -1,3 +1,5 @@
+import { playNotificationSound } from './sound.js';
+
 function safeJsonParse(value) {
   try {
     return JSON.parse(value);
@@ -6,7 +8,7 @@ function safeJsonParse(value) {
   }
 }
 
-export function initRealtime({ state, marketplace, community, notifications }) {
+export function initRealtime({ state, marketplace, community, notifications, feedback }) {
   let source = null;
   const timers = new Map();
 
@@ -30,6 +32,7 @@ export function initRealtime({ state, marketplace, community, notifications }) {
     nextSource.addEventListener('listing.created', () => {
       debounceRefresh('listings', () => marketplace.refreshListings());
       debounceRefresh('notifications', () => notifications.refresh());
+      playNotificationSound();
     });
 
     nextSource.addEventListener('listing.updated', () => {
@@ -45,15 +48,23 @@ export function initRealtime({ state, marketplace, community, notifications }) {
     nextSource.addEventListener('community.updated', () => {
       debounceRefresh('community', () => community.refreshPosts());
       debounceRefresh('notifications', () => notifications.refresh());
+      playNotificationSound();
     });
 
     nextSource.addEventListener('delivery.updated', () => {
       debounceRefresh('notifications', () => notifications.refresh());
+      playNotificationSound();
+    });
+
+    nextSource.addEventListener('feedback.updated', () => {
+      if (feedback?.refreshMyFeedback) debounceRefresh('feedback', () => feedback.refreshMyFeedback(), 150);
+      playNotificationSound();
     });
 
     nextSource.addEventListener('notifications.invalidate', (event) => {
       const payload = safeJsonParse(event.data || '{}');
       debounceRefresh('notifications', () => notifications.refresh(), 120);
+      playNotificationSound();
       if (payload?.source === 'community.comment') {
         showBrowserNotification('Community update', 'New comment received on your discussion.');
       }

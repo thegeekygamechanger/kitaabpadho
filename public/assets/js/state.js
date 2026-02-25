@@ -10,7 +10,7 @@ export const state = {
     nearbyCities: [],
     localityOptions: [],
     localitySelectionMap: {},
-    radiusKm: 200
+    radiusKm: 250
   },
   marketplace: {
     listingType: 'buy',

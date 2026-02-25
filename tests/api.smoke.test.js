@@ -42,8 +42,8 @@ function createMockRepo() {
     async findUserById(id) {
       return users.find((u) => Number(u.id) === Number(id)) || null;
     },
-    async createUser({ email, fullName, passwordHash }) {
-      const user = { id: ++userId, email, fullName, passwordHash, role: 'student' };
+    async createUser({ email, fullName, passwordHash, role = 'student' }) {
+      const user = { id: ++userId, email, fullName, passwordHash, role };
       users.push(user);
       return { id: user.id, email: user.email, fullName: user.fullName, role: user.role };
     },
@@ -329,7 +329,8 @@ test('API smoke coverage for health/auth/listings/community/ai/location', async 
       fullName: 'Harsh Kumar',
       email: 'harsh@example.com',
       phoneNumber: '9876543210',
-      password: 'StrongPass#123'
+      password: 'StrongPass#123',
+      role: 'seller'
     })
   });
   assert.equal(registerRes.status, 201);

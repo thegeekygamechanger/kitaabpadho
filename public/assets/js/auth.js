@@ -127,7 +127,8 @@ export function initAuth({ state, onAuthChanged }) {
         fullName: form.fullName.value.trim(),
         email: form.email.value.trim(),
         phoneNumber,
-        password: form.password.value
+        password: form.password.value,
+        role: form.role?.value || 'student'
       };
       const totpSecret = form.totpSecret.value.trim().toUpperCase();
       const totpCode = form.totpCode.value.trim();
