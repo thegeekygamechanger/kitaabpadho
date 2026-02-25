@@ -1971,6 +1971,7 @@ function createApp(deps = {}) {
       let isDeliveryActor = false;
       if (role === 'delivery' && typeof repository.canDeliveryUserManageOrder === 'function') {
         isDeliveryActor = await repository.canDeliveryUserManageOrder({
+          orderId: existing.id,
           listingId: existing.listingId,
           userId: req.user.id
         });
@@ -2000,6 +2001,47 @@ function createApp(deps = {}) {
       });
       if (!updated) return res.status(404).json({ error: 'Order not found or forbidden' });
 
+      let orderDeliveryJob = null;
+      let deliveryAudienceIds = [];
+      const normalizedDeliveryMode = String(updated.deliveryMode || '').toLowerCase();
+      const needsDeliveryHandoff = normalizedDeliveryMode === 'peer_to_peer' || normalizedDeliveryMode === 'kpi_dedicated';
+      if (
+        updated.status === 'shipping' &&
+        needsDeliveryHandoff &&
+        typeof repository.ensureDeliveryJobForOrder === 'function'
+      ) {
+        const listingForJob =
+          typeof repository.getListingById === 'function'
+            ? await repository.getListingById(updated.listingId).catch(() => null)
+            : null;
+        orderDeliveryJob = await repository.ensureDeliveryJobForOrder({
+          orderId: updated.id,
+          listingId: updated.listingId,
+          pickupCity: listingForJob?.city || updated.listingCity || '',
+          pickupAreaCode: listingForJob?.areaCode || updated.listingAreaCode || '',
+          pickupLatitude:
+            listingForJob && typeof listingForJob.latitude === 'number' ? Number(listingForJob.latitude) : null,
+          pickupLongitude:
+            listingForJob && typeof listingForJob.longitude === 'number' ? Number(listingForJob.longitude) : null,
+          deliveryMode: normalizedDeliveryMode || 'peer_to_peer',
+          createdBy: updated.sellerId || req.user.id
+        });
+
+        if (orderDeliveryJob?.created) {
+          const deliveryRows = await queryFn(
+            `SELECT id FROM users WHERE lower(role) = 'delivery' ORDER BY id DESC LIMIT 500`,
+            []
+          ).catch(() => ({ rows: [] }));
+          deliveryAudienceIds = [
+            ...new Set(
+              (deliveryRows.rows || [])
+                .map((row) => Number(row.id))
+                .filter((id) => Number.isFinite(id) && id > 0 && id !== Number(req.user.id))
+            )
+          ];
+        }
+      }
+
       await logProjectAction(req, {
         actionType: 'order.status_update',
         entityType: 'marketplace_order',
@@ -2008,13 +2050,14 @@ function createApp(deps = {}) {
         details: { previousStatus: existing.status, status: updated.status }
       });
 
+      const statusText = String(updated.status || '').replaceAll('_', ' ');
       if (typeof repository.createUserNotification === 'function') {
         if (updated.buyerId) {
           await repository.createUserNotification({
             userId: updated.buyerId,
             kind: 'order_status',
             title: 'Order status updated',
-            body: `Order #${updated.id}: ${updated.status.replaceAll('_', ' ')}`,
+            body: `Order #${updated.id}: ${statusText}`,
             entityType: 'marketplace_order',
             entityId: updated.id
           });
@@ -2024,10 +2067,36 @@ function createApp(deps = {}) {
             userId: updated.sellerId,
             kind: 'order_status',
             title: 'Order status updated',
-            body: `Order #${updated.id}: ${updated.status.replaceAll('_', ' ')}`,
+            body: `Order #${updated.id}: ${statusText}`,
             entityType: 'marketplace_order',
             entityId: updated.id
           });
+        }
+        if (updated.deliveryPartnerId && Number(updated.deliveryPartnerId) !== Number(req.user.id)) {
+          await repository.createUserNotification({
+            userId: updated.deliveryPartnerId,
+            kind: 'order_status',
+            title: 'Order status updated',
+            body: `Order #${updated.id}: ${statusText}`,
+            entityType: 'marketplace_order',
+            entityId: updated.id
+          });
+        }
+        if (orderDeliveryJob?.created && deliveryAudienceIds.length) {
+          await Promise.all(
+            deliveryAudienceIds.map((deliveryUserId) =>
+              repository
+                .createUserNotification({
+                  userId: deliveryUserId,
+                  kind: 'delivery_job_open',
+                  title: 'New delivery job available',
+                  body: `Order #${updated.id} is ready for pickup in ${updated.listingCity || 'your area'}.`,
+                  entityType: 'delivery_job',
+                  entityId: orderDeliveryJob.id
+                })
+                .catch(() => null)
+            )
+          );
         }
         if (role === 'delivery' && updated.status === 'delivered' && updated.paycheckStatus === 'released') {
           await repository.createUserNotification({
@@ -2041,15 +2110,66 @@ function createApp(deps = {}) {
         }
       }
 
+      await Promise.all([
+        pushToUser(updated.buyerId, {
+          title: 'Order status updated',
+          body: `Order #${updated.id} is now ${statusText}.`,
+          url: `${appConfig.appBaseUrl}/#ordersPanel`
+        }).catch(() => null),
+        updated.sellerId && Number(updated.sellerId) !== Number(req.user.id)
+          ? pushToUser(updated.sellerId, {
+              title: 'Order status updated',
+              body: `Order #${updated.id} is now ${statusText}.`,
+              url: `${appConfig.appBaseUrl}/seller#sellerOrdersPanel`
+            }).catch(() => null)
+          : Promise.resolve(),
+        updated.deliveryPartnerId && Number(updated.deliveryPartnerId) !== Number(req.user.id)
+          ? pushToUser(updated.deliveryPartnerId, {
+              title: 'Order status updated',
+              body: `Order #${updated.id} is now ${statusText}.`,
+              url: `${appConfig.appBaseUrl}/delivery#deliveryOrdersPanel`
+            }).catch(() => null)
+          : Promise.resolve()
+      ]);
+
+      if (orderDeliveryJob?.created && typeof repository.listPushSubscriptionsNear === 'function') {
+        const nearbySubscriptions = await repository
+          .listPushSubscriptionsNear({
+            lat: orderDeliveryJob.pickupLatitude,
+            lon: orderDeliveryJob.pickupLongitude,
+            city: orderDeliveryJob.pickupCity || updated.listingCity || '',
+            radiusKm: 250
+          })
+          .catch(() => []);
+        await sendWebPushToSubscriptions(nearbySubscriptions, {
+          title: 'New delivery job',
+          body: `Order #${updated.id} is ready for pickup.`,
+          url: `${appConfig.appBaseUrl}/delivery#deliveryJobsPanel`
+        });
+      }
+
       publishRealtimeEvent('orders.updated', { type: 'order_status_updated', orderId: updated.id }, updated.buyerId);
       publishRealtimeEvent('orders.updated', { type: 'order_status_updated', orderId: updated.id }, updated.sellerId);
       if (updated.deliveryPartnerId) {
         publishRealtimeEvent('orders.updated', { type: 'order_status_updated', orderId: updated.id }, updated.deliveryPartnerId);
       }
+      if (orderDeliveryJob?.id) {
+        publishRealtimeEvent('delivery.updated', {
+          type: orderDeliveryJob.created ? 'delivery_job_created' : 'delivery_job_updated',
+          deliveryJobId: orderDeliveryJob.id,
+          orderId: updated.id
+        });
+      }
       publishRealtimeEvent('notifications.invalidate', { source: 'order.status_update' }, updated.buyerId);
       publishRealtimeEvent('notifications.invalidate', { source: 'order.status_update' }, updated.sellerId);
+      if (updated.deliveryPartnerId) {
+        publishRealtimeEvent('notifications.invalidate', { source: 'order.status_update' }, updated.deliveryPartnerId);
+      }
+      for (const deliveryUserId of deliveryAudienceIds) {
+        publishRealtimeEvent('notifications.invalidate', { source: 'order.shipping_handoff' }, deliveryUserId);
+      }
 
-      return res.json({ ok: true, order: updated });
+      return res.json({ ok: true, order: updated, deliveryJob: orderDeliveryJob || null });
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
       return res.status(500).json({ error: error.message });
@@ -2425,6 +2545,10 @@ function createApp(deps = {}) {
         summary: 'Delivery job status updated',
         details: { previousStatus: existing.status, status: updated.status, listingId: updated.listingId }
       });
+      let linkedOrder = null;
+      if (updated.orderId && typeof repository.getMarketplaceOrderById === 'function') {
+        linkedOrder = await repository.getMarketplaceOrderById(updated.orderId).catch(() => null);
+      }
 
       if (typeof repository.createUserNotification === 'function') {
         if (updated.createdBy && Number(updated.createdBy) !== Number(req.user.id)) {
@@ -2454,6 +2578,28 @@ function createApp(deps = {}) {
           });
           publishRealtimeEvent('notifications.invalidate', { source: 'delivery.status_update' }, updated.claimedBy);
         }
+        if (linkedOrder?.sellerId && Number(linkedOrder.sellerId) !== Number(req.user.id)) {
+          await repository.createUserNotification({
+            userId: linkedOrder.sellerId,
+            kind: 'delivery_status',
+            title: 'Delivery status updated',
+            body: `Order #${linkedOrder.id} delivery is now ${updated.status}.`,
+            entityType: 'marketplace_order',
+            entityId: linkedOrder.id
+          });
+          publishRealtimeEvent('notifications.invalidate', { source: 'delivery.status_update' }, linkedOrder.sellerId);
+        }
+        if (linkedOrder?.buyerId && Number(linkedOrder.buyerId) !== Number(req.user.id)) {
+          await repository.createUserNotification({
+            userId: linkedOrder.buyerId,
+            kind: 'delivery_status',
+            title: 'Delivery status updated',
+            body: `Order #${linkedOrder.id} delivery is now ${updated.status}.`,
+            entityType: 'marketplace_order',
+            entityId: linkedOrder.id
+          });
+          publishRealtimeEvent('notifications.invalidate', { source: 'delivery.status_update' }, linkedOrder.buyerId);
+        }
       }
 
       publishRealtimeEvent('delivery.updated', {
@@ -2461,6 +2607,10 @@ function createApp(deps = {}) {
         deliveryJobId: updated.id,
         status: updated.status
       });
+      if (linkedOrder) {
+        publishRealtimeEvent('orders.updated', { type: 'delivery_status_updated', orderId: linkedOrder.id }, linkedOrder.sellerId);
+        publishRealtimeEvent('orders.updated', { type: 'delivery_status_updated', orderId: linkedOrder.id }, linkedOrder.buyerId);
+      }
 
       return res.json({ ok: true, job: updated });
     } catch (error) {
@@ -2527,10 +2677,14 @@ function createApp(deps = {}) {
         entityType: 'delivery_job',
         entityId: job.id,
         summary: 'Delivery executive claimed a job',
-        details: { listingId: job.listingId }
+        details: { listingId: job.listingId, orderId: job.orderId || null }
       });
 
       publishRealtimeEvent('delivery.updated', { type: 'delivery_job_claimed', deliveryJobId: job.id });
+      let linkedOrder = null;
+      if (job.orderId && typeof repository.getMarketplaceOrderById === 'function') {
+        linkedOrder = await repository.getMarketplaceOrderById(job.orderId).catch(() => null);
+      }
       if (job.createdBy) {
         await repository.createUserNotification?.({
           userId: job.createdBy,
@@ -2547,6 +2701,43 @@ function createApp(deps = {}) {
           url: `${appConfig.appBaseUrl}/#notificationsPanel`
         });
       }
+      if (linkedOrder && typeof repository.createUserNotification === 'function') {
+        if (linkedOrder.sellerId && Number(linkedOrder.sellerId) !== Number(req.user.id)) {
+          await repository.createUserNotification({
+            userId: linkedOrder.sellerId,
+            kind: 'delivery_claimed',
+            title: 'Delivery partner assigned',
+            body: `Order #${linkedOrder.id} is now assigned to a delivery partner.`,
+            entityType: 'marketplace_order',
+            entityId: linkedOrder.id
+          });
+          publishRealtimeEvent('notifications.invalidate', { source: 'delivery.claim' }, linkedOrder.sellerId);
+          await pushToUser(linkedOrder.sellerId, {
+            title: 'Delivery partner assigned',
+            body: `Order #${linkedOrder.id} is now assigned.`,
+            url: `${appConfig.appBaseUrl}/seller#sellerOrdersPanel`
+          }).catch(() => null);
+        }
+        if (linkedOrder.buyerId && Number(linkedOrder.buyerId) !== Number(req.user.id)) {
+          await repository.createUserNotification({
+            userId: linkedOrder.buyerId,
+            kind: 'delivery_claimed',
+            title: 'Delivery partner assigned',
+            body: `Order #${linkedOrder.id} is now assigned to a delivery partner.`,
+            entityType: 'marketplace_order',
+            entityId: linkedOrder.id
+          });
+          publishRealtimeEvent('notifications.invalidate', { source: 'delivery.claim' }, linkedOrder.buyerId);
+          await pushToUser(linkedOrder.buyerId, {
+            title: 'Delivery partner assigned',
+            body: `Order #${linkedOrder.id} is now assigned.`,
+            url: `${appConfig.appBaseUrl}/#ordersPanel`
+          }).catch(() => null);
+        }
+        publishRealtimeEvent('orders.updated', { type: 'delivery_partner_assigned', orderId: linkedOrder.id }, linkedOrder.buyerId);
+        publishRealtimeEvent('orders.updated', { type: 'delivery_partner_assigned', orderId: linkedOrder.id }, linkedOrder.sellerId);
+      }
+      publishRealtimeEvent('notifications.invalidate', { source: 'delivery.claim' }, req.user.id);
 
       return res.json({ ok: true, job });
     } catch (error) {

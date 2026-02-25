@@ -1969,13 +1969,23 @@ function createRepository(queryFn) {
       return inserted.rows[0] || null;
     },
 
-    async createDeliveryJob({ listingId, pickupCity, pickupAreaCode = '', pickupLatitude = null, pickupLongitude = null, deliveryMode, createdBy }) {
+    async createDeliveryJob({
+      orderId = null,
+      listingId,
+      pickupCity,
+      pickupAreaCode = '',
+      pickupLatitude = null,
+      pickupLongitude = null,
+      deliveryMode,
+      createdBy
+    }) {
       const result = await run(
         `INSERT INTO delivery_jobs
-          (listing_id, pickup_city, pickup_area_code, pickup_latitude, pickup_longitude, delivery_mode, created_by, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,'open')
+          (order_id, listing_id, pickup_city, pickup_area_code, pickup_latitude, pickup_longitude, delivery_mode, created_by, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'open')
          RETURNING
           id,
+          order_id AS "orderId",
           listing_id AS "listingId",
           pickup_city AS "pickupCity",
           pickup_area_code AS "pickupAreaCode",
@@ -1987,9 +1997,61 @@ function createRepository(queryFn) {
           claimed_by AS "claimedBy",
           created_at AS "createdAt",
           updated_at AS "updatedAt"`,
-        [listingId, pickupCity, pickupAreaCode, pickupLatitude, pickupLongitude, deliveryMode, createdBy]
+        [orderId, listingId, pickupCity, pickupAreaCode, pickupLatitude, pickupLongitude, deliveryMode, createdBy]
       );
       return result.rows[0] || null;
+    },
+
+    async findActiveDeliveryJobForOrder(orderId) {
+      const result = await run(
+        `SELECT
+          dj.id,
+          dj.order_id AS "orderId",
+          dj.listing_id AS "listingId",
+          dj.pickup_city AS "pickupCity",
+          dj.pickup_area_code AS "pickupAreaCode",
+          dj.pickup_latitude AS "pickupLatitude",
+          dj.pickup_longitude AS "pickupLongitude",
+          dj.delivery_mode AS "deliveryMode",
+          dj.status,
+          dj.created_by AS "createdBy",
+          dj.claimed_by AS "claimedBy",
+          dj.created_at AS "createdAt",
+          dj.updated_at AS "updatedAt"
+         FROM delivery_jobs dj
+         WHERE dj.order_id = $1
+           AND dj.status IN ('open', 'claimed', 'picked', 'on_the_way')
+         ORDER BY dj.updated_at DESC
+         LIMIT 1`,
+        [orderId]
+      );
+      return result.rows[0] || null;
+    },
+
+    async ensureDeliveryJobForOrder({
+      orderId,
+      listingId,
+      pickupCity,
+      pickupAreaCode = '',
+      pickupLatitude = null,
+      pickupLongitude = null,
+      deliveryMode = 'peer_to_peer',
+      createdBy
+    }) {
+      const existing = await this.findActiveDeliveryJobForOrder(orderId);
+      if (existing) return { ...existing, created: false };
+      const created = await this.createDeliveryJob({
+        orderId,
+        listingId,
+        pickupCity,
+        pickupAreaCode,
+        pickupLatitude,
+        pickupLongitude,
+        deliveryMode,
+        createdBy
+      });
+      if (!created) return null;
+      return { ...created, created: true };
     },
 
     async listDeliveryJobs({ lat = null, lon = null, radiusKm = 250, city = '', areaCode = '', status = 'open', limit = 25, offset = 0 }) {
@@ -2032,6 +2094,7 @@ function createRepository(queryFn) {
       const result = await run(
         `SELECT
           dj.id,
+          dj.order_id AS "orderId",
           dj.listing_id AS "listingId",
           dj.pickup_city AS "pickupCity",
           dj.pickup_area_code AS "pickupAreaCode",
@@ -2047,9 +2110,12 @@ function createRepository(queryFn) {
           l.price AS "listingPrice",
           l.listing_type AS "listingType",
           l.seller_type AS "sellerType",
+          mo.status AS "orderStatus",
+          mo.delivery_partner_id AS "orderDeliveryPartnerId",
           ${distanceSql} AS "distanceKm"
          FROM delivery_jobs dj
          INNER JOIN listings l ON l.id = dj.listing_id
+         LEFT JOIN marketplace_orders mo ON mo.id = dj.order_id
          ${whereSql}
          ORDER BY ${orderSql}
          LIMIT $${limitParam}
@@ -2068,6 +2134,7 @@ function createRepository(queryFn) {
          WHERE id = $1 AND status = 'open'
          RETURNING
           id,
+          order_id AS "orderId",
           listing_id AS "listingId",
           pickup_city AS "pickupCity",
           pickup_area_code AS "pickupAreaCode",
@@ -2081,13 +2148,27 @@ function createRepository(queryFn) {
           updated_at AS "updatedAt"`,
         [jobId, userId]
       );
-      return result.rows[0] || null;
+      const job = result.rows[0] || null;
+      if (!job) return null;
+      if (job.orderId) {
+        await run(
+          `UPDATE marketplace_orders
+           SET
+            delivery_partner_id = $2,
+            updated_at = NOW()
+           WHERE id = $1
+             AND (delivery_partner_id IS NULL OR delivery_partner_id = $2)`,
+          [job.orderId, userId]
+        );
+      }
+      return job;
     },
 
     async getDeliveryJobById(jobId) {
       const result = await run(
         `SELECT
           dj.id,
+          dj.order_id AS "orderId",
           dj.listing_id AS "listingId",
           dj.pickup_city AS "pickupCity",
           dj.pickup_area_code AS "pickupAreaCode",
@@ -2122,6 +2203,7 @@ function createRepository(queryFn) {
            AND ($2::boolean OR created_by = $3 OR claimed_by = $3)
          RETURNING
           id,
+          order_id AS "orderId",
           listing_id AS "listingId",
           pickup_city AS "pickupCity",
           pickup_area_code AS "pickupAreaCode",
@@ -2145,6 +2227,7 @@ function createRepository(queryFn) {
            AND ($2::boolean OR created_by = $3 OR claimed_by = $3)
          RETURNING
           id,
+          order_id AS "orderId",
           listing_id AS "listingId",
           created_by AS "createdBy"`,
         [jobId, Boolean(isAdmin), actorId]
@@ -2413,7 +2496,11 @@ function createRepository(queryFn) {
         `($1::boolean OR EXISTS (
           SELECT 1
           FROM delivery_jobs dj
-          WHERE dj.listing_id = mo.listing_id AND dj.claimed_by = $2
+          WHERE dj.claimed_by = $2
+            AND (
+              (dj.order_id IS NOT NULL AND dj.order_id = mo.id)
+              OR (dj.order_id IS NULL AND dj.listing_id = mo.listing_id)
+            )
         ))`
       ];
       if (status) {
@@ -2482,14 +2569,18 @@ function createRepository(queryFn) {
       return result.rows;
     },
 
-    async canDeliveryUserManageOrder({ listingId, userId }) {
+    async canDeliveryUserManageOrder({ orderId = null, listingId, userId }) {
       const result = await run(
         `SELECT EXISTS(
           SELECT 1
           FROM delivery_jobs
-          WHERE listing_id = $1 AND claimed_by = $2
+          WHERE claimed_by = $3
+            AND (
+              (order_id IS NOT NULL AND order_id = $1)
+              OR (order_id IS NULL AND listing_id = $2)
+            )
         ) AS ok`,
-        [listingId, userId]
+        [orderId, listingId, userId]
       );
       return Boolean(result.rows[0]?.ok);
     },
@@ -2523,7 +2614,11 @@ function createRepository(queryFn) {
                $6::boolean AND EXISTS (
                  SELECT 1
                  FROM delivery_jobs dj
-                 WHERE dj.listing_id = mo.listing_id AND dj.claimed_by = $5
+                 WHERE dj.claimed_by = $5
+                   AND (
+                     (dj.order_id IS NOT NULL AND dj.order_id = mo.id)
+                     OR (dj.order_id IS NULL AND dj.listing_id = mo.listing_id)
+                   )
                )
              )
            )

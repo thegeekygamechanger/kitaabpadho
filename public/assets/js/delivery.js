@@ -163,6 +163,7 @@ function renderJobs(items) {
           <div class="card-meta">
             <span class="pill type-buy">${escapeHtml(item.status || 'open')}</span>
             <span class="muted">${escapeHtml(distance)}</span>
+            ${item.orderId ? `<span class="muted">Order #${escapeHtml(String(item.orderId))}</span>` : ''}
           </div>
           <h3 class="card-title">${escapeHtml(item.listingTitle || `Listing #${item.listingId}`)}</h3>
           <p class="muted">${escapeHtml(item.pickupCity || '')} | ${escapeHtml(item.pickupAreaCode || '')}</p>
@@ -393,6 +394,23 @@ async function resolveOpenOrderByListingId(listingId) {
   return currentOrders.find(
     (item) => Number(item.listingId) === Number(listingId) && item.status !== 'delivered' && item.status !== 'cancelled'
   );
+}
+
+async function resolveOpenOrderForJob(job) {
+  if (!job) return null;
+  if (job.orderId) {
+    const exact = currentOrders.find(
+      (item) => Number(item.id) === Number(job.orderId) && item.status !== 'delivered' && item.status !== 'cancelled'
+    );
+    if (exact) return exact;
+    try {
+      const fetched = await api.orderById(job.orderId);
+      if (fetched && fetched.status !== 'delivered' && fetched.status !== 'cancelled') return fetched;
+    } catch {
+      // Fallback to listing-based lookup for backward compatibility.
+    }
+  }
+  return resolveOpenOrderByListingId(job.listingId);
 }
 
 async function detectGps() {
@@ -657,7 +675,7 @@ el('deliveryJobs')?.addEventListener('click', async (event) => {
     try {
       const job = await api.deliveryJobById(viewBtn.dataset.id);
       window.alert(
-        `Job #${job.id}\nListing #${job.listingId}\nStatus: ${job.status}\nPickup: ${job.pickupCity} (${job.pickupAreaCode})\nDelivery Mode: ${job.deliveryMode}`
+        `Job #${job.id}\nOrder: ${job.orderId ? `#${job.orderId}` : 'N/A'}\nListing #${job.listingId}\nStatus: ${job.status}\nPickup: ${job.pickupCity} (${job.pickupAreaCode})\nDelivery Mode: ${job.deliveryMode}`
       );
     } catch (error) {
       setText('deliveryStatus', error.message || 'Unable to view delivery job');
@@ -746,14 +764,14 @@ el('deliveryWorkList')?.addEventListener('click', async (event) => {
   try {
     setText('deliveryWorkStatus', `Updating job #${job.id}...`);
     if (stage === 'in_progress') {
-      const order = await resolveOpenOrderByListingId(job.listingId);
+      const order = await resolveOpenOrderForJob(job);
       if (order && ['received', 'packing'].includes(String(order.status || ''))) {
         await api.updateOrderStatus(order.id, 'shipping');
       }
       await api.updateDeliveryJobStatus(job.id, 'claimed');
       setText('deliveryWorkStatus', `Job #${job.id} moved to in progress.`);
     } else if (stage === 'on_the_way') {
-      const order = await resolveOpenOrderByListingId(job.listingId);
+      const order = await resolveOpenOrderForJob(job);
       if (!order) {
         setText('deliveryWorkStatus', `No active order found for listing #${job.listingId}.`);
         return;
@@ -761,7 +779,7 @@ el('deliveryWorkList')?.addEventListener('click', async (event) => {
       await api.updateOrderStatus(order.id, 'out_for_delivery');
       setText('deliveryWorkStatus', `Order #${order.id} is out for delivery.`);
     } else if (stage === 'done') {
-      const order = await resolveOpenOrderByListingId(job.listingId);
+      const order = await resolveOpenOrderForJob(job);
       if (order) {
         const updated = await api.updateOrderStatus(order.id, 'delivered');
         if (updated?.order?.paycheckStatus === 'released') {
