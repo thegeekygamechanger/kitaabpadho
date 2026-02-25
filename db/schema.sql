@@ -56,6 +56,21 @@ CREATE TABLE IF NOT EXISTS community_comments (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS project_actions (
+  id BIGSERIAL PRIMARY KEY,
+  actor_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  actor_email TEXT,
+  actor_role TEXT,
+  action_type TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id BIGINT,
+  summary TEXT NOT NULL,
+  details JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ip_address TEXT,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_listings_geo ON listings (latitude, longitude);
 CREATE INDEX IF NOT EXISTS idx_listings_created_at ON listings (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_listings_filters ON listings (listing_type, category, area_code);
@@ -63,6 +78,9 @@ CREATE INDEX IF NOT EXISTS idx_media_listing_id ON media_assets (listing_id);
 CREATE INDEX IF NOT EXISTS idx_community_posts_created_at ON community_posts (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_community_posts_category ON community_posts (category_id);
 CREATE INDEX IF NOT EXISTS idx_community_comments_post ON community_comments (post_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_project_actions_created_at ON project_actions (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_project_actions_action_type ON project_actions (action_type);
+CREATE INDEX IF NOT EXISTS idx_project_actions_entity ON project_actions (entity_type, entity_id);
 
 INSERT INTO community_categories (slug, name, description)
 VALUES

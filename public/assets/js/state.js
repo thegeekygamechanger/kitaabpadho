@@ -17,5 +17,12 @@ export const state = {
   community: {
     q: '',
     categorySlug: ''
+  },
+  admin: {
+    q: '',
+    actionType: '',
+    entityType: '',
+    limit: 50,
+    offset: 0
   }
 };

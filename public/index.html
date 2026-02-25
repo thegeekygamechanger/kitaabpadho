@@ -47,6 +47,7 @@
       <nav class="kb-nav">
         <a href="#marketplace">Marketplace</a>
         <a href="#community">Community</a>
+        <a id="adminNavLink" href="#adminPanel" hidden>Admin</a>
         <a href="#ai">Ask PadhAI</a>
         <span id="authBadge" class="kb-badge">Guest Mode</span>
       </nav>
@@ -182,6 +183,25 @@
         </form>
 
         <div id="communityPosts" class="cards"></div>
+      </section>
+
+      <section id="adminPanel" class="panel hidden">
+        <div class="panel-head">
+          <h2>Admin Panel</h2>
+          <button id="adminRefreshBtn" class="kb-btn kb-btn-ghost" type="button">Refresh</button>
+        </div>
+        <p id="adminStatus" class="muted">Login with an admin account to view project actions.</p>
+
+        <div id="adminSummary" class="admin-summary"></div>
+
+        <div class="filter-grid admin-filter-grid">
+          <input id="adminSearchInput" class="kb-input" placeholder="Search by summary or email" />
+          <input id="adminActionTypeFilter" class="kb-input" placeholder="Action type (example: listing.create)" />
+          <input id="adminEntityTypeFilter" class="kb-input" placeholder="Entity type (example: listing)" />
+          <button id="adminApplyFiltersBtn" class="kb-btn kb-btn-dark" type="button">Apply</button>
+        </div>
+
+        <div id="adminActionsList" class="admin-actions"></div>
       </section>
 
       <section id="ai" class="panel">

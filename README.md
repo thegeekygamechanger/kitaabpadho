@@ -50,6 +50,16 @@ npm test
 - `POST /api/community/posts`
 - `POST /api/community/posts/:id/comments`
 - `DELETE /api/community/comments/:id`
+- `GET /api/admin/summary` (admin only)
+- `GET /api/admin/actions` (admin only)
+
+## Admin panel
+- Admin panel is available in the web UI (`Admin` nav tab) only for users with `role = 'admin'`.
+- Promote a user manually in Postgres:
+  ```sql
+  UPDATE users SET role = 'admin' WHERE email = 'your-admin@email.com';
+  ```
+- Log out and log in again after role change so the session token reflects admin role.
 
 ## Security baseline included
 - Security headers (Helmet)

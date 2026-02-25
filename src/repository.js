@@ -38,6 +38,155 @@ function createRepository(queryFn) {
       return result.rows[0];
     },
 
+    async createProjectAction({
+      actorId = null,
+      actorEmail = '',
+      actorRole = '',
+      actionType,
+      entityType,
+      entityId = null,
+      summary,
+      details = {},
+      ipAddress = '',
+      userAgent = ''
+    }) {
+      const result = await run(
+        `INSERT INTO project_actions
+          (actor_id, actor_email, actor_role, action_type, entity_type, entity_id, summary, details, ip_address, user_agent)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         RETURNING
+          id,
+          actor_id AS "actorId",
+          actor_email AS "actorEmail",
+          actor_role AS "actorRole",
+          action_type AS "actionType",
+          entity_type AS "entityType",
+          entity_id AS "entityId",
+          summary,
+          details,
+          ip_address AS "ipAddress",
+          user_agent AS "userAgent",
+          created_at AS "createdAt"`,
+        [actorId, actorEmail, actorRole, actionType, entityType, entityId, summary, details, ipAddress, userAgent]
+      );
+      return result.rows[0];
+    },
+
+    async listProjectActions(filters) {
+      const values = [];
+      const where = [];
+
+      if (filters.q) {
+        values.push(`%${filters.q}%`);
+        const p = values.length;
+        where.push(
+          `(pa.summary ILIKE $${p} OR COALESCE(pa.actor_email, '') ILIKE $${p} OR COALESCE(u.email, '') ILIKE $${p})`
+        );
+      }
+
+      if (filters.actionType) {
+        values.push(filters.actionType);
+        where.push(`pa.action_type = $${values.length}`);
+      }
+
+      if (filters.entityType) {
+        values.push(filters.entityType);
+        where.push(`pa.entity_type = $${values.length}`);
+      }
+
+      if (filters.actorId) {
+        values.push(filters.actorId);
+        where.push(`pa.actor_id = $${values.length}`);
+      }
+
+      const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      values.push(filters.limit, filters.offset);
+      const limitParam = values.length - 1;
+      const offsetParam = values.length;
+
+      const result = await run(
+        `SELECT
+          pa.id,
+          pa.action_type AS "actionType",
+          pa.entity_type AS "entityType",
+          pa.entity_id AS "entityId",
+          pa.summary,
+          pa.details,
+          pa.ip_address AS "ipAddress",
+          pa.user_agent AS "userAgent",
+          pa.created_at AS "createdAt",
+          pa.actor_id AS "actorId",
+          COALESCE(u.full_name, '') AS "actorName",
+          COALESCE(u.email, pa.actor_email, '') AS "actorEmail",
+          COALESCE(pa.actor_role, u.role, '') AS "actorRole"
+        FROM project_actions pa
+        LEFT JOIN users u ON u.id = pa.actor_id
+        ${whereSql}
+        ORDER BY pa.created_at DESC
+        LIMIT $${limitParam}
+        OFFSET $${offsetParam}`,
+        values
+      );
+      return result.rows;
+    },
+
+    async countProjectActions(filters) {
+      const values = [];
+      const where = [];
+
+      if (filters.q) {
+        values.push(`%${filters.q}%`);
+        const p = values.length;
+        where.push(
+          `(pa.summary ILIKE $${p} OR COALESCE(pa.actor_email, '') ILIKE $${p} OR COALESCE(u.email, '') ILIKE $${p})`
+        );
+      }
+      if (filters.actionType) {
+        values.push(filters.actionType);
+        where.push(`pa.action_type = $${values.length}`);
+      }
+      if (filters.entityType) {
+        values.push(filters.entityType);
+        where.push(`pa.entity_type = $${values.length}`);
+      }
+      if (filters.actorId) {
+        values.push(filters.actorId);
+        where.push(`pa.actor_id = $${values.length}`);
+      }
+
+      const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+      const result = await run(
+        `SELECT COUNT(*)::int AS total
+         FROM project_actions pa
+         LEFT JOIN users u ON u.id = pa.actor_id
+         ${whereSql}`,
+        values
+      );
+      return result.rows[0]?.total || 0;
+    },
+
+    async getAdminSummary() {
+      const result = await run(
+        `SELECT
+          (SELECT COUNT(*)::int FROM users) AS users,
+          (SELECT COUNT(*)::int FROM listings) AS listings,
+          (SELECT COUNT(*)::int FROM community_posts) AS "communityPosts",
+          (SELECT COUNT(*)::int FROM community_comments) AS "communityComments",
+          (SELECT COUNT(*)::int FROM project_actions) AS "actionsTotal",
+          (SELECT COUNT(*)::int FROM project_actions WHERE created_at >= NOW() - INTERVAL '24 hours') AS "actionsLast24h"`
+      );
+      return (
+        result.rows[0] || {
+          users: 0,
+          listings: 0,
+          communityPosts: 0,
+          communityComments: 0,
+          actionsTotal: 0,
+          actionsLast24h: 0
+        }
+      );
+    },
+
     async listListings(filters) {
       const values = [];
       const where = [];

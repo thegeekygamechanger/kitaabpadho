@@ -68,6 +68,17 @@ const communityListQuerySchema = z.object({
   offset: optionalNumber(z.number().int().min(0).max(5000)).default(0)
 });
 
+const actionTokenSchema = z.string().trim().min(2).max(80).regex(/^[a-z0-9_.:-]+$/);
+
+const adminActionQuerySchema = z.object({
+  q: z.string().trim().min(1).max(160).optional(),
+  actionType: actionTokenSchema.optional(),
+  entityType: actionTokenSchema.optional(),
+  actorId: optionalNumber(z.number().int().positive()),
+  limit: optionalNumber(z.number().int().min(1).max(100)).default(50),
+  offset: optionalNumber(z.number().int().min(0).max(10000)).default(0)
+});
+
 const aiSchema = z.object({
   prompt: z.string().min(5).max(2000)
 });
@@ -83,5 +94,6 @@ module.exports = {
   communityPostSchema,
   communityCommentSchema,
   communityListQuerySchema,
+  adminActionQuerySchema,
   aiSchema
 };

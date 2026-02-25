@@ -402,6 +402,10 @@ body {
   display: none;
 }
 
+.hidden {
+  display: none !important;
+}
+
 .drawer-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -520,6 +524,73 @@ body {
   font-weight: 700;
 }
 
+.admin-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-bottom: 0.75rem;
+}
+
+.admin-kpi {
+  border: 1px solid #d4e2ff;
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 0.7rem;
+}
+
+.admin-kpi strong {
+  font-size: 1.18rem;
+  display: block;
+}
+
+.admin-kpi span {
+  font-size: 0.82rem;
+  color: #4d6286;
+}
+
+.admin-actions {
+  border: 1px solid #d6e4ff;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.admin-table-wrap {
+  overflow-x: auto;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 860px;
+}
+
+.admin-table th,
+.admin-table td {
+  border-bottom: 1px solid #e2ebff;
+  padding: 0.58rem 0.62rem;
+  text-align: left;
+  vertical-align: top;
+  font-size: 0.86rem;
+}
+
+.admin-table th {
+  background: #f3f7ff;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  color: #284d93;
+  text-transform: uppercase;
+}
+
+.admin-table pre {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.74rem;
+  white-space: pre-wrap;
+  max-width: 260px;
+  color: #2e4872;
+}
+
 @keyframes riseIn {
   from {
     transform: translateY(8px);
@@ -569,6 +640,10 @@ body {
   .drawer-grid {
     grid-template-columns: 1fr 1fr;
   }
+
+  .admin-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 780px) {
@@ -607,5 +682,9 @@ body {
 
   .cards {
     grid-template-columns: 1fr;
+  }
+
+  .admin-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

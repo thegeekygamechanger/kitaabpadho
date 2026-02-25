@@ -4,7 +4,8 @@ const {
   listingSchema,
   listingQuerySchema,
   communityPostSchema,
-  communityCommentSchema
+  communityCommentSchema,
+  adminActionQuerySchema
 } = require('../src/validators');
 
 test('listingSchema accepts sell listing with area code', () => {
@@ -64,4 +65,21 @@ test('community validation blocks malformed category slug', () => {
       categorySlug: 'invalid slug'
     })
   );
+});
+
+test('adminActionQuerySchema parses optional filters safely', () => {
+  const parsed = adminActionQuerySchema.parse({
+    q: 'listing',
+    actionType: 'listing.create',
+    entityType: 'listing',
+    actorId: '8',
+    limit: '25',
+    offset: '5'
+  });
+
+  assert.equal(parsed.actionType, 'listing.create');
+  assert.equal(parsed.entityType, 'listing');
+  assert.equal(parsed.actorId, 8);
+  assert.equal(parsed.limit, 25);
+  assert.equal(parsed.offset, 5);
 });

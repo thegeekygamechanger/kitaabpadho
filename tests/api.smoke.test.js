@@ -22,6 +22,7 @@ function createMockRepo() {
   let mediaId = 0;
   let postId = 0;
   let commentId = 0;
+  let actionId = 0;
   const users = [];
   const listings = [];
   const mediaAssets = [];
@@ -32,6 +33,7 @@ function createMockRepo() {
   ];
   const posts = [];
   const comments = [];
+  const actions = [];
 
   return {
     async findUserByEmail(email) {
@@ -44,6 +46,80 @@ function createMockRepo() {
       const user = { id: ++userId, email, fullName, passwordHash, role: 'student' };
       users.push(user);
       return { id: user.id, email: user.email, fullName: user.fullName, role: user.role };
+    },
+    async setUserRole(id, role) {
+      const user = users.find((item) => Number(item.id) === Number(id));
+      if (!user) return null;
+      user.role = role;
+      return { id: user.id, role: user.role };
+    },
+    async createProjectAction({
+      actorId = null,
+      actorEmail = '',
+      actorRole = '',
+      actionType,
+      entityType,
+      entityId = null,
+      summary,
+      details = {},
+      ipAddress = '',
+      userAgent = ''
+    }) {
+      const action = {
+        id: ++actionId,
+        actorId,
+        actorEmail,
+        actorRole,
+        actionType,
+        entityType,
+        entityId,
+        summary,
+        details,
+        ipAddress,
+        userAgent,
+        createdAt: new Date().toISOString()
+      };
+      actions.push(action);
+      return action;
+    },
+    async listProjectActions(filters) {
+      let rows = actions.map((action) => {
+        const user = users.find((item) => Number(item.id) === Number(action.actorId));
+        return {
+          ...action,
+          actorName: user?.fullName || '',
+          actorEmail: user?.email || action.actorEmail || '',
+          actorRole: action.actorRole || user?.role || ''
+        };
+      });
+
+      if (filters.q) {
+        const q = String(filters.q).toLowerCase();
+        rows = rows.filter((row) =>
+          [row.summary, row.actorEmail].some((value) => String(value || '').toLowerCase().includes(q))
+        );
+      }
+      if (filters.actionType) rows = rows.filter((row) => row.actionType === filters.actionType);
+      if (filters.entityType) rows = rows.filter((row) => row.entityType === filters.entityType);
+      if (filters.actorId) rows = rows.filter((row) => Number(row.actorId) === Number(filters.actorId));
+
+      rows.sort((a, b) => Number(b.id) - Number(a.id));
+      return rows.slice(filters.offset, filters.offset + filters.limit);
+    },
+    async countProjectActions(filters) {
+      const rows = await this.listProjectActions({ ...filters, limit: 10000, offset: 0 });
+      return rows.length;
+    },
+    async getAdminSummary() {
+      const threshold = Date.now() - 24 * 60 * 60 * 1000;
+      return {
+        users: users.length,
+        listings: listings.length,
+        communityPosts: posts.length,
+        communityComments: comments.length,
+        actionsTotal: actions.length,
+        actionsLast24h: actions.filter((action) => new Date(action.createdAt).getTime() >= threshold).length
+      };
     },
     async listListings(filters) {
       let rows = listings.map((listing) => ({
@@ -349,9 +425,42 @@ test('API smoke coverage for health/auth/listings/community/ai/location', async 
   assert.equal(locationRes.status, 200);
   assert.match((await json(locationRes)).current.address, /Hadapsar/);
 
+  const adminDeniedRes = await fetch(`${baseUrl}/api/admin/actions`, {
+    headers: { cookie: authCookie }
+  });
+  assert.equal(adminDeniedRes.status, 403);
+
+  await repo.setUserRole(meJson.user.id, 'admin');
+  const adminLoginRes = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'harsh@example.com',
+      password: 'StrongPass#123'
+    })
+  });
+  assert.equal(adminLoginRes.status, 200);
+  const adminCookie = parseCookie(adminLoginRes.headers.get('set-cookie'));
+
+  const adminSummaryRes = await fetch(`${baseUrl}/api/admin/summary`, {
+    headers: { cookie: adminCookie }
+  });
+  assert.equal(adminSummaryRes.status, 200);
+  const adminSummary = await json(adminSummaryRes);
+  assert.equal(adminSummary.users, 1);
+  assert.ok(adminSummary.actionsTotal >= 1);
+
+  const adminActionsRes = await fetch(`${baseUrl}/api/admin/actions?limit=10&offset=0`, {
+    headers: { cookie: adminCookie }
+  });
+  assert.equal(adminActionsRes.status, 200);
+  const adminActions = await json(adminActionsRes);
+  assert.ok(Array.isArray(adminActions.data));
+  assert.ok(adminActions.data.length >= 1);
+
   const logoutRes = await fetch(`${baseUrl}/api/auth/logout`, {
     method: 'POST',
-    headers: { cookie: authCookie }
+    headers: { cookie: adminCookie }
   });
   assert.equal(logoutRes.status, 200);
   const clearedCookie = parseCookie(logoutRes.headers.get('set-cookie'));

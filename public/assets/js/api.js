@@ -66,5 +66,7 @@ export const api = {
   createCommunityComment: (postId, data) =>
     apiRequest(`/api/community/posts/${postId}/comments`, { method: 'POST', body: data }),
   deleteCommunityComment: (commentId) => apiRequest(`/api/community/comments/${commentId}`, { method: 'DELETE' }),
-  askAI: (prompt) => apiRequest('/api/ai/chat', { method: 'POST', body: { prompt } })
+  askAI: (prompt) => apiRequest('/api/ai/chat', { method: 'POST', body: { prompt } }),
+  adminSummary: () => apiRequest('/api/admin/summary'),
+  listAdminActions: (filters) => apiRequest(`/api/admin/actions${buildQuery(filters)}`)
 };

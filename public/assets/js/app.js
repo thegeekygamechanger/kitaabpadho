@@ -1,4 +1,5 @@
 import { initAi } from './ai.js';
+import { initAdmin } from './admin.js';
 import { initAuth } from './auth.js';
 import { initCommunity } from './community.js';
 import { initLocation } from './location.js';
@@ -17,20 +18,27 @@ function wireModalDismiss() {
 }
 
 function boot() {
+  let auth;
+
   const marketplace = initMarketplace({
     state,
-    openAuthModal: (message) => auth.openAuthModal(message)
+    openAuthModal: (message) => auth?.openAuthModal(message)
   });
 
   const community = initCommunity({
     state,
-    openAuthModal: (message) => auth.openAuthModal(message)
+    openAuthModal: (message) => auth?.openAuthModal(message)
   });
 
-  const auth = initAuth({
+  const admin = initAdmin({
+    state,
+    openAuthModal: (message) => auth?.openAuthModal(message)
+  });
+
+  auth = initAuth({
     state,
     onAuthChanged: async () => {
-      await Promise.all([marketplace.refreshListings(), community.refreshPosts()]);
+      await Promise.all([marketplace.refreshListings(), community.refreshPosts(), admin.onAuthChanged()]);
     }
   });
 
@@ -61,7 +69,7 @@ function boot() {
   Promise.all([auth.refreshUser(), community.loadCategories()])
     .catch(() => null)
     .finally(async () => {
-      await Promise.all([marketplace.refreshListings(), community.refreshPosts()]);
+      await Promise.all([marketplace.refreshListings(), community.refreshPosts(), admin.refresh()]);
     });
 }
 

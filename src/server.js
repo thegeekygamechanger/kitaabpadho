@@ -26,6 +26,7 @@ const {
   communityPostSchema,
   communityCommentSchema,
   communityListQuerySchema,
+  adminActionQuerySchema,
   aiSchema
 } = require('./validators');
 
@@ -36,6 +37,23 @@ function parseId(value) {
 
 function isZodError(error) {
   return Array.isArray(error?.issues);
+}
+
+function getIpAddress(req) {
+  const forwarded = req.headers?.['x-forwarded-for'];
+  if (typeof forwarded === 'string' && forwarded.trim()) {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.ip || req.socket?.remoteAddress || '';
+}
+
+function toSerializableObject(value) {
+  if (!value || typeof value !== 'object') return {};
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return {};
+  }
 }
 
 function createApp(deps = {}) {
@@ -84,6 +102,35 @@ function createApp(deps = {}) {
     return next();
   };
 
+  const requireAdmin = (req, res, next) => {
+    if (!req.user?.id) return res.status(401).json({ error: 'Authentication required' });
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    return next();
+  };
+
+  const logProjectAction = async (
+    req,
+    { actor = req.user, actionType, entityType, entityId = null, summary, details = {} }
+  ) => {
+    if (typeof repository.createProjectAction !== 'function') return;
+    try {
+      await repository.createProjectAction({
+        actorId: actor?.id || null,
+        actorEmail: actor?.email || '',
+        actorRole: actor?.role || '',
+        actionType,
+        entityType,
+        entityId,
+        summary,
+        details: toSerializableObject(details),
+        ipAddress: getIpAddress(req),
+        userAgent: String(req.get('user-agent') || '')
+      });
+    } catch {
+      // Keep primary request flow resilient if audit logging fails.
+    }
+  };
+
   app.get('/api/health', (_, res) => res.json({ ok: true, stack: 'express-neon-r2-pwa' }));
 
   app.post('/api/auth/register', authLimiter, async (req, res) => {
@@ -101,6 +148,14 @@ function createApp(deps = {}) {
 
       const token = createSessionToken(user, appConfig.sessionSecret, appConfig.sessionTtlSeconds);
       res.cookie(appConfig.sessionCookieName, token, cookieOptions);
+      await logProjectAction(req, {
+        actor: user,
+        actionType: 'auth.register',
+        entityType: 'user',
+        entityId: user.id,
+        summary: 'New user account registered',
+        details: { email: user.email }
+      });
       return res.status(201).json({ authenticated: true, user });
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid input' });
@@ -119,6 +174,14 @@ function createApp(deps = {}) {
 
       const token = createSessionToken(user, appConfig.sessionSecret, appConfig.sessionTtlSeconds);
       res.cookie(appConfig.sessionCookieName, token, cookieOptions);
+      await logProjectAction(req, {
+        actor: user,
+        actionType: 'auth.login',
+        entityType: 'user',
+        entityId: user.id,
+        summary: 'User logged in',
+        details: { email: user.email }
+      });
       return res.json({
         authenticated: true,
         user: { id: user.id, email: user.email, fullName: user.fullName, role: user.role }
@@ -129,7 +192,15 @@ function createApp(deps = {}) {
     }
   });
 
-  app.post('/api/auth/logout', (req, res) => {
+  app.post('/api/auth/logout', async (req, res) => {
+    if (req.user?.id) {
+      await logProjectAction(req, {
+        actionType: 'auth.logout',
+        entityType: 'user',
+        entityId: req.user.id,
+        summary: 'User logged out'
+      });
+    }
     res.clearCookie(appConfig.sessionCookieName, clearCookieOptions);
     res.json({ authenticated: false });
   });
@@ -223,6 +294,17 @@ function createApp(deps = {}) {
         city: body.city.trim(),
         createdBy: req.user.id
       });
+      await logProjectAction(req, {
+        actionType: 'listing.create',
+        entityType: 'listing',
+        entityId: listing.id,
+        summary: 'Marketplace listing created',
+        details: {
+          listingType: listing.listingType,
+          category: listing.category,
+          areaCode: listing.areaCode
+        }
+      });
       return res.status(201).json(listing);
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
@@ -259,6 +341,17 @@ function createApp(deps = {}) {
         key: uploaded.key,
         url: uploaded.url,
         mediaType: req.file.mimetype
+      });
+      await logProjectAction(req, {
+        actionType: 'listing.media_upload',
+        entityType: 'listing',
+        entityId: listingId,
+        summary: 'Listing media uploaded',
+        details: {
+          mediaId: media.id,
+          mediaType: req.file.mimetype,
+          key: uploaded.key
+        }
       });
 
       return res.json({ ...media, r2Enabled: r2EnabledFlag });
@@ -336,6 +429,13 @@ function createApp(deps = {}) {
         categoryId: category.id,
         createdBy: req.user.id
       });
+      await logProjectAction(req, {
+        actionType: 'community.post_create',
+        entityType: 'community_post',
+        entityId: post.id,
+        summary: 'Community post created',
+        details: { categorySlug: body.categorySlug }
+      });
 
       const fullPost = await repository.getCommunityPostById(post.id);
       return res.status(201).json(fullPost || post);
@@ -359,6 +459,13 @@ function createApp(deps = {}) {
         createdBy: req.user.id,
         content: sanitizeText(body.content, 1000)
       });
+      await logProjectAction(req, {
+        actionType: 'community.comment_create',
+        entityType: 'community_comment',
+        entityId: comment.id,
+        summary: 'Community comment added',
+        details: { postId }
+      });
       return res.status(201).json({ ...comment, authorName: req.user.fullName });
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
@@ -373,6 +480,12 @@ function createApp(deps = {}) {
     try {
       const deleted = await repository.deleteCommunityComment(commentId, req.user.id);
       if (!deleted) return res.status(404).json({ error: 'Comment not found or forbidden' });
+      await logProjectAction(req, {
+        actionType: 'community.comment_delete',
+        entityType: 'community_comment',
+        entityId: commentId,
+        summary: 'Community comment deleted'
+      });
       return res.json({ ok: true });
     } catch (error) {
       return res.status(500).json({ error: error.message });
@@ -383,9 +496,74 @@ function createApp(deps = {}) {
     try {
       const { prompt } = aiSchema.parse(req.body);
       const ai = await askAiFn(prompt);
+      await logProjectAction(req, {
+        actionType: 'ai.chat',
+        entityType: 'assistant',
+        summary: 'AI chat request processed',
+        details: { provider: ai.provider, promptLength: String(prompt).length }
+      });
       return res.json(ai);
     } catch (error) {
       if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid body' });
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/admin/summary', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const summary =
+        typeof repository.getAdminSummary === 'function'
+          ? await repository.getAdminSummary()
+          : {
+              users: 0,
+              listings: 0,
+              communityPosts: 0,
+              communityComments: 0,
+              actionsTotal: 0,
+              actionsLast24h: 0
+            };
+      await logProjectAction(req, {
+        actionType: 'admin.summary_view',
+        entityType: 'admin_panel',
+        summary: 'Admin viewed platform summary'
+      });
+      return res.json(summary);
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get('/api/admin/actions', requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const filters = adminActionQuerySchema.parse(req.query);
+      const data =
+        typeof repository.listProjectActions === 'function' ? await repository.listProjectActions(filters) : [];
+      const total =
+        typeof repository.countProjectActions === 'function'
+          ? await repository.countProjectActions(filters)
+          : data.length;
+      await logProjectAction(req, {
+        actionType: 'admin.actions_view',
+        entityType: 'admin_panel',
+        summary: 'Admin viewed project action feed',
+        details: {
+          actionType: filters.actionType || '',
+          entityType: filters.entityType || '',
+          hasSearch: Boolean(filters.q),
+          limit: filters.limit,
+          offset: filters.offset
+        }
+      });
+      return res.json({
+        data,
+        meta: {
+          total,
+          limit: filters.limit,
+          offset: filters.offset
+        }
+      });
+    } catch (error) {
+      if (isZodError(error)) return res.status(400).json({ error: error.issues[0]?.message || 'Invalid query' });
       return res.status(500).json({ error: error.message });
     }
   });

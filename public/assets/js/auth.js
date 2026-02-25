@@ -15,7 +15,8 @@ export function initAuth({ state, onAuthChanged }) {
     if (state.user) {
       if (openAuthBtn) openAuthBtn.hidden = true;
       if (logoutBtn) logoutBtn.hidden = false;
-      if (authBadge) authBadge.textContent = `Hi ${state.user.fullName}`;
+      const roleTag = state.user.role === 'admin' ? ' [admin]' : '';
+      if (authBadge) authBadge.textContent = `Hi ${state.user.fullName}${roleTag}`;
     } else {
       if (openAuthBtn) openAuthBtn.hidden = false;
       if (logoutBtn) logoutBtn.hidden = true;
