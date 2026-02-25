@@ -2113,23 +2113,33 @@ function createApp(deps = {}) {
     res.sendFile(path.join(process.cwd(), 'public', 'manifest.webmanifest'));
   });
 
+  app.get('/sw.js', (_, res) => {
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(path.join(process.cwd(), 'public', 'sw.js'));
+  });
+
   app.get('/admin', (_, res) => {
+    res.setHeader('Cache-Control', 'no-store');
     res.sendFile(path.join(process.cwd(), 'public', 'admin.html'));
   });
 
   app.get('/seller', (_, res) => {
+    res.setHeader('Cache-Control', 'no-store');
     res.sendFile(path.join(process.cwd(), 'public', 'seller.html'));
   });
 
   app.get('/delivery', (_, res) => {
+    res.setHeader('Cache-Control', 'no-store');
     res.sendFile(path.join(process.cwd(), 'public', 'delivery.html'));
   });
 
   app.get('/buyer', (_, res) => {
+    res.setHeader('Cache-Control', 'no-store');
     res.sendFile(path.join(process.cwd(), 'public', 'index.html'));
   });
 
   app.get('*', (_, res) => {
+    res.setHeader('Cache-Control', 'no-store');
     res.sendFile(path.join(process.cwd(), 'public', 'index.html'));
   });
 
